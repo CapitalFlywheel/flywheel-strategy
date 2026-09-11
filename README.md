@@ -24,19 +24,6 @@ TRADING FEES  ──►  MSTR  ──►  HOLDER REWARDS
                          └──►  STRATEGIC RESERVE
 ```
 
-## ■ AT A GLANCE
-
-| | |
-|:--|:--|
-| **Project** | FLYWHEEL STRATEGY |
-| **Ticker** | CAPITAL |
-| **Network** | Robinhood Chain |
-| **Trading pair** | CAPITAL / ETH |
-| **Reward asset** | MSTR |
-| **Holder staking** | Not required |
-| **Token lock for rewards** | Not required |
-| **Claim cost** | Paid by the claiming holder |
-
 ## ■ FEE FLOW
 
 PONS V2 trading uses a **3% total trade fee**
