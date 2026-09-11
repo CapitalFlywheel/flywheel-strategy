@@ -1,0 +1,18 @@
+[Unit]
+Description=MSTR System signed control action runner
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+User=mstradmin
+Group=mstradmin
+WorkingDirectory=/opt/mstr-system
+ExecStart=/opt/mstr-system/ops/control-runner.sh
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

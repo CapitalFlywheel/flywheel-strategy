@@ -1,0 +1,27 @@
+{
+  "chainId": 4663,
+  "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+  "assets": {
+    "WETH": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "USDG": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    "MSTR": "0xec262a75e413fAfD0dF80480274532C79D42da09"
+  },
+  "uniswap": {
+    "universalRouter": "0x8876789976decbfcbbbe364623c63652db8c0904",
+    "v4Quoter": "0x8dc178efb8111bb0973dd9d722ebeff267c98f94",
+    "v3Quoter": "0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7",
+    "primaryRoute": ["ETH", "WETH", "USDG", "MSTR"],
+    "pools": {
+      "WETH_USDG_V4_002": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "MSTR_USDG_V4_025": "0x319bac87e616a89e241c10aeb8afd4892a852cdd8b373cd9765ecddc40b87cfe",
+      "MSTR_WETH_V3_100": "0x70504a6FafdbfB75fE971FAA4dD716e79aC5624c"
+    },
+    "poolKeys": {
+      "WETH_USDG": { "fee": 200, "tickSpacing": 4, "hooks": "0x0000000000000000000000000000000000000000" },
+      "USDG_MSTR": { "fee": 2500, "tickSpacing": 25, "hooks": "0x0000000000000000000000000000000000000000" }
+    },
+    "maxSlippageBps": 2000,
+    "maxInitialChunkEth": "10"
+  },
+  "status": "REQUIRES_PRELAUNCH_REVERIFICATION"
+}

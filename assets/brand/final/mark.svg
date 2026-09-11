@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-labelledby="title desc">
+  <title id="title">FLYWHEEL STRATEGY mark</title>
+  <desc id="desc">Six angular blades forming a clockwise capital flywheel</desc>
+  <g fill="#FA660F">
+    <path d="M500 68 758 248 543 347 426 270Z"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(60 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(120 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(180 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(240 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(300 500 500)"/>
+  </g>
+</svg>

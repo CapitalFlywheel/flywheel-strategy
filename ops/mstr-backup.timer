@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily MSTR SYSTEM data backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

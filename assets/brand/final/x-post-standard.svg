@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="FLYWHEEL STRATEGY standard X post template">
+  <rect width="1600" height="900" fill="#FA660F"/>
+  <rect x="1210" width="390" height="900" fill="#080808"/>
+  <g opacity=".16" stroke="#080808">
+    <path d="M80 0V900M1120 0V900M0 80H1210M0 820H1210"/>
+  </g>
+  <g fill="#080808" transform="translate(1050 48) scale(.14)">
+    <path d="M500 68 758 248 543 347 426 270Z"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(60 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(120 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(180 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(240 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(300 500 500)"/>
+  </g>
+  <text x="125" y="152" font-family="Bahnschrift, Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="8" fill="#080808">FLYWHEEL STRATEGY</text>
+  <rect x="125" y="210" width="112" height="10" fill="#080808"/>
+  <text x="120" y="440" font-family="Impact, Arial Narrow, Arial, sans-serif" font-size="164" letter-spacing="1" fill="#080808">POST TITLE</text>
+  <text x="128" y="530" font-family="Bahnschrift, Arial, sans-serif" font-size="37" font-weight="600" letter-spacing="3" fill="#080808">SHORT SUPPORTING LINE</text>
+  <g font-family="Bahnschrift, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="4" fill="#F5F0E9">
+    <text x="1280" y="164">CAPITAL</text>
+    <text x="1280" y="206">IN MOTION</text>
+  </g>
+  <g stroke="#FA660F" fill="none" stroke-width="3">
+    <path d="M1280 308h166l40 40h114"/>
+    <path d="M1280 388h116l40 40h164"/>
+    <path d="M1280 468h66l40 40h214"/>
+  </g>
+  <g fill="#FA660F">
+    <circle cx="1446" cy="308" r="7"/><circle cx="1396" cy="388" r="7"/><circle cx="1346" cy="468" r="7"/>
+  </g>
+  <text x="1280" y="760" font-family="Bahnschrift, Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="4" fill="#FA660F">$CAPITAL</text>
+</svg>

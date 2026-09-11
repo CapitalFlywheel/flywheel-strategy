@@ -1,0 +1,14 @@
+.git
+.gitignore
+.secrets
+.env
+.env.*
+!.env.example
+node_modules
+artifacts
+cache
+coverage
+dist
+work
+*.log
+

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 420" role="img" aria-labelledby="title desc">
+  <title id="title">FLYWHEEL STRATEGY wordmark</title>
+  <desc id="desc">FLYWHEEL STRATEGY with the CAPITAL ticker and angular flywheel</desc>
+  <rect width="1600" height="420" fill="#F5F0E9"/>
+  <g fill="#080808" transform="translate(25 28) scale(.36)">
+    <path d="M500 68 758 248 543 347 426 270Z"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(60 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(120 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(180 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(240 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(300 500 500)"/>
+  </g>
+  <g font-family="Arial Narrow, Bahnschrift, Arial, sans-serif" font-weight="900">
+    <text x="430" y="178" font-size="154" letter-spacing="-5" fill="#080808">FLYWHEEL</text>
+    <text x="430" y="322" font-size="154" letter-spacing="-5" fill="#FA660F">STRATEGY</text>
+  </g>
+  <rect x="1135" y="274" width="18" height="48" fill="#FA660F"/>
+  <text x="1180" y="321" font-family="Arial Narrow, Bahnschrift, Arial, sans-serif" font-size="54" font-weight="700" letter-spacing="4" fill="#080808">$CAPITAL</text>
+</svg>

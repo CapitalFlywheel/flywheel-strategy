@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="FLYWHEEL STRATEGY MSTR rewards report template">
+  <rect width="1600" height="900" fill="#FA660F"/>
+  <rect x="80" y="70" width="1440" height="760" fill="#080808"/>
+  <text x="150" y="164" font-family="Bahnschrift, Arial, sans-serif" font-size="25" font-weight="700" letter-spacing="7" fill="#F5F0E9">FLYWHEEL STRATEGY</text>
+  <text x="145" y="345" font-family="Impact, Arial Narrow, Arial, sans-serif" font-size="138" letter-spacing="2" fill="#FA660F">MSTR REWARDS</text>
+  <text x="152" y="430" font-family="Bahnschrift, Arial, sans-serif" font-size="36" font-weight="700" letter-spacing="4" fill="#F5F0E9">REWARD CYCLE REPORT</text>
+  <g font-family="Bahnschrift, Arial, sans-serif">
+    <text x="154" y="570" font-size="20" font-weight="700" letter-spacing="5" fill="#F5F0E9">DISTRIBUTED</text>
+    <text x="154" y="650" font-size="62" font-weight="700" letter-spacing="2" fill="#FA660F">0000 MSTR</text>
+    <text x="720" y="570" font-size="20" font-weight="700" letter-spacing="5" fill="#F5F0E9">HOLDERS</text>
+    <text x="720" y="650" font-size="62" font-weight="700" letter-spacing="2" fill="#FA660F">0000</text>
+  </g>
+  <g fill="#FA660F" transform="translate(1150 150) scale(.30)">
+    <path d="M500 68 758 248 543 347 426 270Z"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(60 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(120 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(180 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(240 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(300 500 500)"/>
+  </g>
+  <text x="1120" y="742" font-family="Bahnschrift, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="4" fill="#FA660F">$CAPITAL</text>
+</svg>

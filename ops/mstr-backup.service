@@ -1,0 +1,6 @@
+[Unit]
+Description=MSTR SYSTEM data backup
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mstr-system/ops/backup-data.sh

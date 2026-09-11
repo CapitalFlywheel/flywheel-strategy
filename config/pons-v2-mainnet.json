@@ -1,0 +1,30 @@
+{
+  "chainId": 4663,
+  "snapshotBlock": "58117760",
+  "factory": "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e",
+  "feeEscrow": "0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e",
+  "memeHook": "0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044",
+  "launchDeployer": "0x3711ceA4feaDE896C913C68F01Eda97Cb06D1A42",
+  "launchForwarder": "0xe33E9E479dF8802cb0866d5d05258bEc4cF62948",
+  "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+  "positionManager": "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
+  "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  "launch": {
+    "configId": 0,
+    "pairToken": "0x0000000000000000000000000000000000000000",
+    "launchFeeWei": "500000000000000",
+    "baseTradeFeeBps": 100,
+    "creatorTaxBps": 200,
+    "totalTradeFeeBps": 300,
+    "buybackEnabled": false,
+    "supplyRaw": "1000000000000000000000000000",
+    "nativeEconomicsDigest": "0xa9fc75d4203a33fe660e8fa32c74c3aa41c1fda4bf23d3a39b6bc22a1f8b1ca7"
+  },
+  "feePolicy": {
+    "protocolFeeShareBps": 3000,
+    "buybackBurnBps": 5000,
+    "hookFeeBps": 100,
+    "maxInternalPriceImpactBps": 300
+  },
+  "status": "LIVE_SNAPSHOT_RECHECK_BEFORE_SIGNING"
+}

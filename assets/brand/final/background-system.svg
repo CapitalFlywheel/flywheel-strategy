@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="FLYWHEEL STRATEGY background system">
+  <rect width="1600" height="900" fill="#080808"/>
+  <g stroke="#FA660F" fill="none">
+    <path d="M0 96H430l56 56h314" opacity=".42"/>
+    <path d="M0 146H330l56 56h414" opacity=".24"/>
+    <path d="M800 698h414l56 56h330" opacity=".24"/>
+    <path d="M800 748h314l56 56h430" opacity=".42"/>
+  </g>
+  <g fill="#FA660F" opacity=".10" transform="translate(930 35) scale(.62)">
+    <path d="M500 68 758 248 543 347 426 270Z"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(60 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(120 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(180 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(240 500 500)"/>
+    <path d="M500 68 758 248 543 347 426 270Z" transform="rotate(300 500 500)"/>
+  </g>
+  <g fill="#FA660F" opacity=".55">
+    <circle cx="430" cy="96" r="5"/>
+    <circle cx="330" cy="146" r="5"/>
+    <circle cx="1270" cy="754" r="5"/>
+    <circle cx="1170" cy="804" r="5"/>
+  </g>
+  <g fill="#F5F0E9" opacity=".13">
+    <circle cx="118" cy="740" r="2"/><circle cx="146" cy="740" r="2"/><circle cx="174" cy="740" r="2"/>
+    <circle cx="118" cy="768" r="2"/><circle cx="146" cy="768" r="2"/><circle cx="174" cy="768" r="2"/>
+    <circle cx="118" cy="796" r="2"/><circle cx="146" cy="796" r="2"/><circle cx="174" cy="796" r="2"/>
+  </g>
+</svg>

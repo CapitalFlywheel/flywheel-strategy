@@ -1,0 +1,7 @@
+[
+  { "action": "ACCUMULATE" },
+  { "action": "BUYBACK_BURN", "reservePercent": 25 },
+  { "action": "BUYBACK_LOCK", "reservePercent": 50, "lock": "3_MONTHS" },
+  { "action": "LOCK_MSTR", "reservePercent": 100, "lock": "1_YEAR" },
+  { "action": "MARKETING_SALE", "reservePercent": 5 }
+]
