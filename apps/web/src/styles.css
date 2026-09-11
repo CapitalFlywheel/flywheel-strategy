@@ -48,9 +48,9 @@ main { width: 100%; min-height: 100vh; overflow: hidden; }
 .topbar-action button { border: 0; padding: 12px 18px; color: var(--black); background: var(--orange); font-size: 12px; font-weight: 700; text-transform: uppercase; }
 .topbar-social { flex: 0 0 auto; padding: 10px 13px; color: var(--orange); border: 1px solid #4e3424; font: 700 11px var(--mono); text-decoration: none; }
 .topbar-social:hover { color: var(--black); background: var(--orange); border-color: var(--orange); }
-.social-x-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
+.social-x-link, .social-icon-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
 .social-x-link i { font-style: normal; }
-.x-logo-icon { width: 15px; height: 15px; flex: 0 0 auto; fill: currentColor; }
+.x-logo-icon, .github-logo-icon { width: 15px; height: 15px; flex: 0 0 auto; fill: currentColor; }
 .social-link-pending { opacity: 1; cursor: not-allowed; }
 .topbar-social.social-link-pending:hover { color: var(--orange); background: transparent; border-color: #4e3424; }
 .topbar-return { padding: 12px 18px; color: var(--black); background: var(--orange); font: 700 12px var(--mono); text-decoration: none; text-transform: uppercase; }
@@ -306,7 +306,7 @@ main { width: 100%; min-height: 100vh; overflow: hidden; }
   .topbar-action button { width: 82px; padding: 10px 8px; overflow: hidden; font-size: 0; white-space: nowrap; }
   .topbar-action button::after { content: "CONNECT"; font-size: 10px; }
   .topbar > .topbar-social { padding: 9px; font-size: 10px; }
-  .topbar-social .x-logo-icon { width: 14px; height: 14px; }
+  .topbar-social .x-logo-icon, .topbar-social .github-logo-icon { width: 14px; height: 14px; }
   .topbar-return { padding: 10px; font-size: 10px; }
   .story-hero { width: 100%; min-height: calc(100vh - 72px); }
   .hero-copy { padding: 54px 18px 42px; }
