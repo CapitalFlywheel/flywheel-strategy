@@ -1,50 +1,99 @@
-# FLYWHEEL STRATEGY
+<p align="center">
+  <img src="assets/brand/final/x-banner-1500x500.png" alt="FLYWHEEL STRATEGY — Fees to MSTR to holders" width="100%">
+</p>
 
-FLYWHEEL STRATEGY is a Robinhood Chain system for passive MSTR rewards and a separately governed MSTR reserve
+<p align="center">
+  <strong>CAPITAL IN MOTION</strong><br>
+  Trading fees build MSTR rewards for holders and a community-governed strategic reserve
+</p>
 
-The project token ticker is `CAPITAL`
+<p align="center">
+  <code>ROBINHOOD CHAIN</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>ETH PAIR</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>MSTR REWARDS</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>NO STAKING</code>
+</p>
 
-## How the system works
+---
 
-1. PONS V2 trading collects a 2% creator fee alongside the 1% PONS protocol fee
-2. The creator fee is split between passive holder rewards, the strategic reserve and automation costs
-3. Automation converts the reward and reserve portions into MSTR
-4. Holders claim MSTR without staking or locking the project token
-5. The team can start a vote, and holders decide how an explicitly reserved amount may be used
+## ■ THE FLYWHEEL
 
-The internal creator-fee split is 50% holder rewards, 40% strategic reserve and 10% automation
+| 01 — TRADE | 02 — ACCUMULATE | 03 — REWARD | 04 — DECIDE |
+|:--|:--|:--|:--|
+| PONS V2 trading generates fees | Automation converts the allocated fees into MSTR | Passive holders claim their share without staking | Holders vote on how the strategic reserve is used |
 
-## Holder rewards
+```text
+TRADING FEES  ──►  MSTR  ──►  HOLDER REWARDS
+                         └──►  STRATEGIC RESERVE
+```
 
-- Reward weight uses token balance, exact hold time measured by the hour and a loyalty multiplier
-- The loyalty multiplier reaches its cap after 30 days
+## ■ AT A GLANCE
+
+| | |
+|:--|:--|
+| **Project** | FLYWHEEL STRATEGY |
+| **Ticker** | CAPITAL |
+| **Network** | Robinhood Chain |
+| **Trading pair** | CAPITAL / ETH |
+| **Reward asset** | MSTR |
+| **Holder staking** | Not required |
+| **Token lock for rewards** | Not required |
+| **Claim cost** | Paid by the claiming holder |
+
+## ■ FEE FLOW
+
+PONS V2 trading uses a **3% total trade fee**
+
+- **1%** — PONS protocol fee
+- **2%** — creator fee routed into the FLYWHEEL STRATEGY system
+
+The creator fee is divided automatically
+
+| Allocation | Share of creator fee | Purpose |
+|:--|--:|:--|
+| Holder rewards | **50%** | MSTR claimable by eligible holders |
+| Strategic reserve | **40%** | MSTR controlled through holder governance |
+| Automation | **10%** | Onchain execution and operating gas |
+
+## ■ PASSIVE HOLDER REWARDS
+
+Reward weight combines token balance with exact hold time measured by the hour
+
+- Loyalty grows from the first hour and reaches its maximum after 30 days
 - Partial sales use newest-lot-first accounting
-- Reward cadence changes with market capitalization: 10, 20, 30 or 60 minutes
-- Reward claims are initiated by the holder, who pays the claim gas
+- Rewards are available without staking or locking CAPITAL
+- Each holder claims MSTR directly and pays their own claim gas
+- Reward rounds adapt to market capitalization
 
-## Governance
+| Market capitalization | Reward interval |
+|:--|--:|
+| Below $500K | 10 minutes |
+| $500K to $1M | 20 minutes |
+| $1M to $5M | 30 minutes |
+| $5M and above | 60 minutes |
 
-- Only the team starts proposals
-- Every holder can vote and voting power follows the reward-weight model
-- Quorum is 7% of eligible voting weight
-- The team chooses a voting duration from one to twelve hours
-- A successful result is executed automatically after a five-minute delay
-- Proposal actions are restricted to the fixed allowlist implemented by the contracts
+## ■ GOVERNANCE
 
-## Transparency
+The team starts proposals and chooses the amount of reserve included in each vote
 
-This repository is intended to publish the contracts, reward calculations, governance rules, automation services, public website and tests
+- Every eligible holder can vote
+- Voting power follows the same balance-and-hold-time model used for rewards
+- Quorum is **7%** of eligible voting weight
+- Voting lasts from **1 to 12 hours**
+- The winning valid action is executed automatically after a **5-minute delay**
+- Proposal actions are limited to the fixed onchain allowlist
 
-Final mainnet contract addresses and transaction links will be added after launch
+Governance can direct the selected reserve amount toward an approved action such as token buyback, buyback and burn, buyback and lock, reserve locking or marketing funding
 
-Useful technical documents:
+## ■ TRANSPARENCY
 
-- [`docs/architecture.md`](docs/architecture.md)
-- [`docs/operations.md`](docs/operations.md)
-- [`apps/web/public/technical-specification.md`](apps/web/public/technical-specification.md)
-- [`SECURITY.md`](SECURITY.md)
+This repository publishes the contracts, reward calculations, governance rules, automation services, public website and tests
 
-## Local verification
+Final mainnet contract addresses and transaction links will be published after the branded launch
+
+- [System architecture](docs/architecture.md)
+- [Public technical specification](apps/web/public/technical-specification.md)
+- [Operations overview](docs/operations.md)
+- [Security policy](SECURITY.md)
+
+## ■ VERIFY LOCALLY
 
 Requirements: Node.js 20+ and npm
 
@@ -55,34 +104,43 @@ npm run test:all
 npm run web:build
 ```
 
-For local development:
+Start the local website
 
 ```bash
 npm run web:dev
 ```
 
-The public preview is available at `http://127.0.0.1:5173`
+Then open `http://127.0.0.1:5173`
 
-## Repository map
+## ■ REPOSITORY MAP
 
-- `contracts/` — Solidity contracts and adapters
-- `services/indexer/` — holding-time and reward calculations
-- `services/keeper/` — launch, reward and governance automation
-- `services/api/` — production web server and public status data
-- `apps/web/` — holder website, documentation, governance and private operations interface
-- `test/` — contract tests
-- `config/` — public chain, protocol and route configuration
+| Path | Purpose |
+|:--|:--|
+| `contracts/` | Solidity contracts and approved execution adapters |
+| `services/indexer/` | Hold-time accounting and reward calculations |
+| `services/keeper/` | Launch, reward and governance automation |
+| `services/api/` | Production web server and public status data |
+| `apps/web/` | Holder website, documentation and governance |
+| `test/` | Contract and system tests |
+| `config/` | Public chain, protocol and route configuration |
 
-## Security
+## ■ SECURITY
 
 Secrets are not stored in this repository
 
-Private keys, seed phrases, RPC credentials, server passwords, SSH private keys, private admin URLs and live bot state must remain outside Git
+Private keys, seed phrases, RPC credentials, server passwords, SSH private keys, hidden administration URLs and live bot state must remain outside Git
 
-`npm run security:secrets` checks publishable files locally, and the same check runs on every GitHub push and pull request
+`npm run security:secrets` checks publishable files locally and the same check runs on every GitHub push and pull request
 
-## Current status
+## ■ CURRENT STATUS
 
-The system has passed the included local contract, indexer and wallet tests and was exercised with a small mainnet test deployment
+The included contract, indexer and wallet tests pass and the system has been exercised with a small mainnet test deployment
 
 The branded production deployment has not happened yet and the contracts have not completed an independent external audit
+
+---
+
+<p align="center">
+  <strong>FLYWHEEL STRATEGY</strong><br>
+  FEES&nbsp;&nbsp;→&nbsp;&nbsp;MSTR&nbsp;&nbsp;→&nbsp;&nbsp;HOLDERS
+</p>
