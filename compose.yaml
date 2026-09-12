@@ -17,12 +17,13 @@ services:
   web:
     <<: *app
     command: npm run web:serve
+    env_file:
+      - .env.web
     environment:
       PORT: 8787
       PUBLIC_DATA_ROOT: /app/data/public
       CONTROL_DATA_ROOT: /app/data/control
       ADMIN_OWNER_ADDRESS: "0xfB8199AA97913c0494A600B725C634527dD47fa4"
-      ADMIN_PANEL_PATH: "${ADMIN_PANEL_PATH:-}"
     ports:
       - "127.0.0.1:8787:8787"
     healthcheck:

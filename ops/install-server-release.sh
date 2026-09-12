@@ -30,7 +30,7 @@ if [ ! -f "$app_dir/data/reward-state.json" ] && [ -d "$release_dir/data" ]; the
 fi
 
 install -m 0600 -o mstradmin -g mstradmin /tmp/.env "$app_dir/.env.server"
-for file in .env.reward-keeper .env.reward-publisher .env.governance-keeper; do
+for file in .env.web .env.reward-keeper .env.reward-publisher .env.governance-keeper; do
   if [ ! -f "$app_dir/$file" ]; then
     install -m 0600 -o mstradmin -g mstradmin /dev/null "$app_dir/$file"
   fi
