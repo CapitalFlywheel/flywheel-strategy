@@ -1,5 +1,7 @@
 FROM node:22-alpine
 WORKDIR /app
+ARG VITE_REOWN_PROJECT_ID=""
+ENV VITE_REOWN_PROJECT_ID=$VITE_REOWN_PROJECT_ID
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY hardhat.config.js ./

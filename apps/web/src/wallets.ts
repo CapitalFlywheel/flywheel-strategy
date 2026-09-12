@@ -203,14 +203,14 @@ export async function connectMobileWallet(projectId: string): Promise<ConnectedW
       showQrModal: true,
       rpcMap: { [robinhoodChain.id]: robinhoodChain.rpcUrl },
       metadata: {
-        name: "ProjectToken",
-        description: "Passive MSTR rewards on Robinhood Chain",
+        name: "FLYWHEEL STRATEGY",
+        description: "Passive MSTR rewards for CAPITAL holders",
         url: window.location.origin,
-        icons: [],
+        icons: [`${window.location.origin}/favicon.svg`],
       },
       qrModalOptions: {
         themeMode: "dark",
-        themeVariables: { "--wcm-accent-color": "#7effad" },
+        themeVariables: { "--wcm-accent-color": "#ff5a00" },
       },
     }) as Eip1193Provider;
   }
