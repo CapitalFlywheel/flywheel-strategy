@@ -11,6 +11,12 @@
   <code>ROBINHOOD CHAIN</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>ETH PAIR</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>MSTR REWARDS</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>NO STAKING</code>
 </p>
 
+<p align="center">
+  <a href="https://flywheelstrategy.xyz"><strong>WEBSITE</strong></a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="https://x.com/capital_strg"><strong>X / TWITTER</strong></a>
+</p>
+
 ---
 
 ## ■ THE FLYWHEEL
