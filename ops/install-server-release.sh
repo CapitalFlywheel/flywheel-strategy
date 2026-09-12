@@ -39,7 +39,9 @@ done
 chown -R mstradmin:mstradmin "$app_dir"
 chmod +x "$app_dir/ops/"*.sh
 
-install -m 0644 /tmp/nginx-ip.conf /etc/nginx/sites-available/mstr-system
+if [ ! -f /etc/nginx/sites-available/mstr-system ]; then
+  install -m 0644 /tmp/nginx-ip.conf /etc/nginx/sites-available/mstr-system
+fi
 ln -sfn /etc/nginx/sites-available/mstr-system /etc/nginx/sites-enabled/mstr-system
 if [ -L /etc/nginx/sites-enabled/default ]; then
   unlink /etc/nginx/sites-enabled/default
