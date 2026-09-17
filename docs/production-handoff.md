@@ -45,6 +45,23 @@ This evidence does not replace an external smart-contract audit. No external aud
 6. Transfer bot secret files and authenticated RPC URLs through an encrypted secret manager, never GitHub or chat.
 7. Record who controls the owner wallet and require a hardware-wallet or equivalent out-of-band confirmation for every deployment transaction.
 
+Transfer and verify access to each of these systems:
+
+- GitHub organization and repository administration
+- VPS provider account and the production host
+- Individual `mstradmin` SSH public-key access for every operator
+- Domain registrar and DNS management
+- Alchemy billing, project, spending limit and IP allowlist
+- Reown project and the approved production domain
+- Project X account and recovery methods
+- Owner/deployer wallet signing process
+- Marketing wallet custody
+- Encrypted recovery copies of the automation and reward-publisher keys
+- The unlisted launch-panel URL
+- Backup location and restoration procedure
+
+Use least privilege where the service supports it. One person should not need the domain registrar, VPS root-equivalent access, owner wallet and social recovery methods for routine operation.
+
 ## Launch workstation
 
 - Use one dedicated, updated browser profile with the owner wallet installed
