@@ -3,12 +3,15 @@
 </p>
 
 <p align="center">
-  <strong>CAPITAL IN MOTION</strong><br>
-  Trading fees build MSTR rewards for holders and a community-governed strategic reserve
+  <img src="assets/brand/final/x-avatar-400.png" alt="FLYWHEEL STRATEGY mark" width="104">
 </p>
 
+<h1 align="center">FLYWHEEL STRATEGY</h1>
+
 <p align="center">
-  <code>ROBINHOOD CHAIN</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>ETH PAIR</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>MSTR REWARDS</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>NO STAKING</code>
+  <strong>HOLD CAPITAL&nbsp;&nbsp;·&nbsp;&nbsp;ACCUMULATE MSTR</strong><br>
+  Trading fees continuously build MSTR rewards for passive holders and a separate holder-governed reserve<br>
+  <strong>CAPITAL IN MOTION</strong>
 </p>
 
 <p align="center">
@@ -19,7 +22,7 @@
 
 ---
 
-## ■ THE FLYWHEEL
+## THE FLYWHEEL
 
 | 01 — TRADE | 02 — ACCUMULATE | 03 — REWARD | 04 — DECIDE |
 |:--|:--|:--|:--|
@@ -30,7 +33,7 @@ TRADING FEES  ──►  MSTR  ──►  HOLDER REWARDS
                          └──►  STRATEGIC RESERVE
 ```
 
-## ■ FEE FLOW
+## FEE FLOW
 
 PONS V2 trading uses a **3% total trade fee**
 
@@ -45,7 +48,7 @@ The creator fee is divided automatically
 | Strategic reserve | **40%** | MSTR controlled through holder governance |
 | Automation | **10%** | Onchain execution and operating gas |
 
-## ■ PASSIVE HOLDER REWARDS
+## PASSIVE HOLDER REWARDS
 
 Reward weight combines token balance with exact hold time measured by the hour
 
@@ -62,7 +65,7 @@ Reward weight combines token balance with exact hold time measured by the hour
 | $1M to $5M | 30 minutes |
 | $5M and above | 60 minutes |
 
-## ■ GOVERNANCE
+## GOVERNANCE
 
 The team starts proposals and chooses the amount of reserve included in each vote
 
@@ -75,7 +78,7 @@ The team starts proposals and chooses the amount of reserve included in each vot
 
 Governance can direct the selected reserve amount toward an approved action such as token buyback, buyback and burn, buyback and lock, reserve locking or marketing funding
 
-## ■ TRANSPARENCY
+## TRANSPARENCY
 
 This repository publishes the contracts, reward calculations, governance rules, automation services, public website and tests
 
@@ -86,7 +89,7 @@ Final mainnet contract addresses and transaction links will be published after t
 - [Operations overview](docs/operations.md)
 - [Security policy](SECURITY.md)
 
-## ■ VERIFY LOCALLY
+## VERIFY LOCALLY
 
 Requirements: Node.js 20+ and npm
 
@@ -105,7 +108,7 @@ npm run web:dev
 
 Then open `http://127.0.0.1:5173`
 
-## ■ REPOSITORY MAP
+## REPOSITORY MAP
 
 | Path | Purpose |
 |:--|:--|
@@ -117,7 +120,7 @@ Then open `http://127.0.0.1:5173`
 | `test/` | Contract and system tests |
 | `config/` | Public chain, protocol and route configuration |
 
-## ■ SECURITY
+## SECURITY
 
 Secrets are not stored in this repository
 
@@ -125,7 +128,7 @@ Private keys, seed phrases, RPC credentials, server passwords, SSH private keys,
 
 `npm run security:secrets` checks publishable files locally and the same check runs on every GitHub push and pull request
 
-## ■ CURRENT STATUS
+## CURRENT STATUS
 
 The included contract, indexer and wallet tests pass and the system has been exercised with a small mainnet test deployment
 
@@ -134,6 +137,7 @@ The branded production deployment has not happened yet and the contracts have no
 ---
 
 <p align="center">
-  <strong>FLYWHEEL STRATEGY</strong><br>
+  <img src="assets/brand/final/x-avatar-400.png" alt="FLYWHEEL STRATEGY mark" width="56"><br>
+  <strong>CAPITAL IN MOTION</strong><br>
   FEES&nbsp;&nbsp;→&nbsp;&nbsp;MSTR&nbsp;&nbsp;→&nbsp;&nbsp;HOLDERS
 </p>

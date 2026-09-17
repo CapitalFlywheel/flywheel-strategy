@@ -2,7 +2,7 @@
 
 Selected direction: Route H, the Route C-dominant hybrid
 
-Primary X avatar and banner status: approved on 2026-09-12
+Primary X avatar and banner status: replaced and approved on 2026-09-17
 
 ## Sources
 
@@ -13,6 +13,8 @@ Primary X avatar and banner status: approved on 2026-09-12
 - `x-avatar-dark.svg` - dark avatar alternative
 - `wordmark.svg` - editable horizontal wordmark source
 - `x-banner.svg` - editable 1500 x 500 banner source
+- `x-avatar-current-source.jpg` - current supplied X avatar master
+- `x-banner-current-source.png` - current supplied X banner master
 - `background-system.svg` - dark reusable technical background
 - `x-post-standard.svg` - editable standard X post template
 - `x-post-announcement.svg` - editable important announcement template
@@ -38,7 +40,8 @@ Primary X avatar and banner status: approved on 2026-09-12
 - Warm white: `#F5F0E9`
 - Do not use a standalone letter C as the mark
 - Use orange and black as the dominant colors
-- The primary avatar uses the medium-weight flywheel with clear gaps between blades
+- The primary avatar uses the current faceted orange mark on pure black
+- New X content must use the cinematic black-and-orange visual language of the current banner
 - Do not place `$CAPITAL` on the X banner
 - Do not use duplicate, faded, or shadow copies behind the main mark
 - Keep the primary orange banner field clean without a translucent grid

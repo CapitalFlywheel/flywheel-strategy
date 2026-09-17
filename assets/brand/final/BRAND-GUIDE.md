@@ -45,6 +45,15 @@ supporting color for readability
 
 - Primary avatar: `x-avatar-1200.png`
 - Primary banner: `x-banner-1500x500.png`
+- Current source avatar: `x-avatar-current-source.jpg`
+- Current source banner: `x-banner-current-source.png`
+- The current X visual direction was replaced and approved on 2026-09-17
+- Use the faceted orange three-dimensional mark on a pure black field as the
+  primary reference for all new X content
+- Use cinematic orange lighting, deep blacks, restrained technical lines and
+  generous negative space
+- For mechanism visuals, preserve the readable sequence
+  `FEES → MSTR → HOLDERS`
 - Do not place `$CAPITAL` on the X banner
 - `$CAPITAL` may be used in post templates and token announcements
 
