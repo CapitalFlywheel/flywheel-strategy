@@ -1,14 +1,33 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
-import { extname } from "node:path";
+import { lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { extname, join, relative } from "node:path";
 
-const listed = execFileSync(
-  "git",
-  ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-  { encoding: "utf8" },
-);
+function filesystemFiles(root = process.cwd()) {
+  const excludedDirectories = new Set([".git", "node_modules", "artifacts", "cache", "coverage", "dist", "work"]);
+  const result = [];
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && excludedDirectories.has(entry.name)) continue;
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) walk(absolute);
+      else if (entry.isFile() && !lstatSync(absolute).isSymbolicLink()) result.push(relative(root, absolute));
+    }
+  };
+  walk(root);
+  return result;
+}
 
-const files = listed.split("\0").filter(Boolean);
+let files;
+try {
+  const listed = execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  );
+  files = listed.split("\0").filter(Boolean);
+} catch {
+  files = filesystemFiles();
+}
 const skippedExtensions = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2",
   ".ttf", ".zip", ".gz", ".pdf", ".mp4", ".mov", ".sqlite", ".db",

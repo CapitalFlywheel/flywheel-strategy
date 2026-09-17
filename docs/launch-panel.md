@@ -34,7 +34,9 @@ These addresses apply to the future main launch. They do not change ownership or
 - Start all three automation services after an owner signature.
 - Stop all three automation services after an owner signature.
 - Keep the public holder website online while automation is stopped.
-- Deploy the pre-launch contract set from the connected owner wallet while saving progress after every confirmed transaction.
+- Deploy the pre-launch contract set from the connected owner wallet while saving progress after every submitted and confirmed transaction.
+- Resume a transaction that was already submitted before a reload instead of submitting a duplicate deployment.
+- Export or import a JSON backup of browser-side launch progress for controlled transfer to another launch workstation.
 - Register a pre-launch manifest only after the server independently checks every contract, role and fixed address on-chain.
 - Display the exact PONS creator-wallet address and arm a temporary launch detector.
 - Detect the PONS `TokenLaunched` event for the configured owner and reject a launch with the wrong creator wallet, pair, creator tax or buyback setting.
@@ -47,7 +49,9 @@ These addresses apply to the future main launch. They do not change ownership or
 - Keep governance execution automatic. The panel deliberately has no manual winner override, cancellation or execution-confirmation control.
 - Show the live PONS trading phase: bonding curve, migration or V4 pool.
 - Buy the project token directly from the PONS curve before graduation and switch to the V4 pool automatically afterward.
-- Keep the launch watcher alive after detection so it can submit both permissionless PONS graduation steps. A transient failure is retried every 15 seconds.
+- Persist the launch scan cursor, restart the watcher after a process/server interruption and resume migration tracking from `detected.json`.
+- Keep the launch watcher alive after detection so it can submit both permissionless PONS graduation steps. A transient failure is retried without advancing the event cursor.
+- Refuse to start reward/governance automation before a verified post-launch manifest exists.
 - Release matured project-token lock tranches automatically into the permanent hold vault. Forever locks are never released.
 
 ## Governance flow in the panel
@@ -71,13 +75,15 @@ The marketing option can send proceeds only to the public marketing wallet embed
 ## Main launch flow
 
 1. Open the private panel address configured on the server and connect the owner wallet.
-2. Type `DEPLOY` and press the preparation button. Confirm the requested transactions in the wallet. The page can be safely reloaded because every confirmed address is stored in the browser.
-3. The server checks the complete pre-launch set. Copy the displayed Creator wallet into PONS V2.
-4. Press the launch-detection button immediately before launching on PONS. Detection runs for at most six hours and may be cancelled from the panel.
-5. Launch manually on PONS with native ETH pair, 2% creator fee, PONS buyback disabled and the exact displayed Creator wallet. Branding and social fields remain under the owner's control on PONS.
-6. The detector finds the factory event and independently reads the PONS launch record. A wrong launch is ignored.
-7. Press the strategy button and confirm the token-specific deployment transactions.
-8. Type `ACTIVATE`, press activation and sign the final owner message. The server checks the complete system again, archives test state, switches the public configuration and starts the reward and governance bots. The migration watcher continues independently until the PONS V4 pool is confirmed ready.
+2. Type `DEPLOY` and press the preparation button. Confirm the requested transactions in the wallet. The page can be safely reloaded because submitted transaction hashes and confirmed addresses are stored in the browser.
+3. Download the launch-progress JSON after pre-launch completes and store it in the team's protected handoff location. It contains public addresses and transaction hashes, not private keys.
+4. The server checks the complete pre-launch set. Copy the displayed Creator wallet into PONS V2.
+5. Press the launch-detection button immediately before launching on PONS. Detection runs for at most six hours and may be cancelled from the panel.
+6. Launch manually on PONS with native ETH pair, 2% creator fee, PONS buyback disabled and the exact displayed Creator wallet. Branding and social fields remain under the owner's control on PONS.
+7. The detector finds the factory event and independently reads the PONS launch record. A wrong launch is ignored.
+8. Press the strategy button and confirm the token-specific deployment transactions.
+9. Download a fresh launch-progress JSON after the post-launch contracts finish.
+10. Type `ACTIVATE`, press activation and sign the final owner message. The server checks the complete system again, archives test state, switches the public configuration and starts the reward and governance bots. The migration watcher continues independently until the PONS V4 pool is confirmed ready.
 
 The panel never sends transactions without a wallet confirmation. The owner key is not stored on the server. Automation and reward-publisher keys remain the only bot keys installed on the server.
 

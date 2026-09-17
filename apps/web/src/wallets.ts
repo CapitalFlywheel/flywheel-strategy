@@ -206,7 +206,7 @@ export async function connectMobileWallet(projectId: string): Promise<ConnectedW
         name: "FLYWHEEL STRATEGY",
         description: "Passive MSTR rewards for CAPITAL holders",
         url: window.location.origin,
-        icons: [`${window.location.origin}/favicon.svg`],
+        icons: [`${window.location.origin}/favicon.png`],
       },
       qrModalOptions: {
         themeMode: "dark",

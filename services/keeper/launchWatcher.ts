@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   createPublicClient,
@@ -9,6 +9,7 @@ import {
   parseAbiItem,
   type Address,
   type Hex,
+  type PublicClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { rpcTransport } from "../shared/rpc";
@@ -64,6 +65,36 @@ async function loadManifest(): Promise<PrelaunchManifest> {
   return normalizePrelaunchManifest(value, getAddress(value.owner));
 }
 
+interface ArmedState {
+  armedAt: number;
+  nextBlock?: string;
+}
+
+interface DetectedState {
+  token: Address;
+  curve: Address;
+  transactionHash: Hex;
+  blockNumber: string;
+  launchTimestamp: number;
+  detectedAt: number;
+  settings: { pair: "ETH"; creatorTaxBps: 200; buybackEnabled: false };
+}
+
+async function loadJson<T>(path: string): Promise<T | undefined> {
+  try {
+    return JSON.parse(await readFile(path, "utf8")) as T;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function disarm() {
+  await unlink(armedPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+}
+
 async function keepMigrationMoving(manifest: PrelaunchManifest, token: Address, detected: object) {
   const account = privateKeyToAccount(required("KEEPER_PRIVATE_KEY") as Hex);
   if (account.address.toLowerCase() !== manifest.automation.toLowerCase()) {
@@ -91,6 +122,7 @@ async function keepMigrationMoving(manifest: PrelaunchManifest, token: Address, 
       });
       if (lifecycle.phase === 2) {
         console.log(`PONS V4 pool is ready for ${token}`);
+        await disarm();
         return;
       }
       if (lifecycle.phase === 3) throw new Error("PONS_GRADUATION_WAS_RESCUED");
@@ -107,51 +139,76 @@ async function keepMigrationMoving(manifest: PrelaunchManifest, token: Address, 
 }
 
 async function main() {
-  await readFile(armedPath, "utf8");
+  const armed = await loadJson<ArmedState>(armedPath);
+  if (!armed) throw new Error("LAUNCH_WATCHER_NOT_ARMED");
   const manifest = await loadManifest();
-  const startedAt = Date.now();
-  let fromBlock = (await publicClient.getBlockNumber()) - 64n;
-  if (fromBlock < 0n) fromBlock = 0n;
+  const detected = await loadJson<DetectedState>(detectedPath);
+  if (detected) {
+    console.log(`Resuming PONS lifecycle tracking for ${detected.token}`);
+    await keepMigrationMoving(manifest, getAddress(detected.token), detected);
+    return;
+  }
+
+  let fromBlock: bigint;
+  if (armed.nextBlock !== undefined) {
+    fromBlock = BigInt(armed.nextBlock);
+  } else {
+    fromBlock = (await publicClient.getBlockNumber()) - 64n;
+    if (fromBlock < 0n) fromBlock = 0n;
+    await atomicJson(armedPath, { ...armed, nextBlock: fromBlock.toString() });
+  }
   console.log(`Watching PONS launches by ${manifest.owner} from block ${fromBlock}`);
   await writeHeartbeat("launch-watcher", true, { state: "armed", owner: manifest.owner, fromBlock: fromBlock.toString() });
 
-  while (Date.now() - startedAt < maxRuntimeMs) {
-    const head = await publicClient.getBlockNumber();
-    if (head >= fromBlock) {
-      const logs = await publicClient.getLogs({
-        address: PONS_FACTORY,
-        event: launchEvent,
-        args: { deployer: manifest.owner },
-        fromBlock,
-        toBlock: head,
-        strict: true,
-      });
-      for (const log of logs) {
-        const token = getAddress(log.args.token as Address);
-        const curve = getAddress(log.args.curve as Address);
-        if (!await verifyPonsDetection(manifest, token, curve)) continue;
-        const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
-        const detected = {
-          token,
-          curve,
-          transactionHash: log.transactionHash,
-          blockNumber: log.blockNumber.toString(),
-          launchTimestamp: Number(block.timestamp),
-          detectedAt: Date.now(),
-          settings: { pair: "ETH", creatorTaxBps: 200, buybackEnabled: false },
-        };
-        await atomicJson(detectedPath, detected);
-        await writeHeartbeat("launch-watcher", true, { state: "detected", ...detected });
-        console.log(`Expected PONS token detected: ${token}`);
-        await keepMigrationMoving(manifest, token, detected);
-        return;
+  while (Date.now() - armed.armedAt < maxRuntimeMs) {
+    try {
+      const head = await publicClient.getBlockNumber();
+      if (head >= fromBlock) {
+        const logs = await publicClient.getLogs({
+          address: PONS_FACTORY,
+          event: launchEvent,
+          args: { deployer: manifest.owner },
+          fromBlock,
+          toBlock: head,
+          strict: true,
+        });
+        for (const log of logs) {
+          const token = getAddress(log.args.token as Address);
+          const curve = getAddress(log.args.curve as Address);
+          if (!await verifyPonsDetection(manifest, token, curve, publicClient as PublicClient)) continue;
+          const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
+          const nextDetected: DetectedState = {
+            token,
+            curve,
+            transactionHash: log.transactionHash,
+            blockNumber: log.blockNumber.toString(),
+            launchTimestamp: Number(block.timestamp),
+            detectedAt: Date.now(),
+            settings: { pair: "ETH", creatorTaxBps: 200, buybackEnabled: false },
+          };
+          await atomicJson(detectedPath, nextDetected);
+          await writeHeartbeat("launch-watcher", true, { state: "detected", ...nextDetected });
+          console.log(`Expected PONS token detected: ${token}`);
+          await keepMigrationMoving(manifest, token, nextDetected);
+          return;
+        }
+        fromBlock = head + 1n;
+        await atomicJson(armedPath, { ...armed, nextBlock: fromBlock.toString() });
       }
-      fromBlock = head + 1n;
+      await writeHeartbeat("launch-watcher", true, { state: "armed", owner: manifest.owner, checkedBlock: head.toString() });
+    } catch (error) {
+      console.error("Launch detection RPC attempt failed; retrying without advancing cursor", error);
+      await writeHeartbeat("launch-watcher", false, {
+        state: "detection_retry",
+        owner: manifest.owner,
+        nextBlock: fromBlock.toString(),
+        error: error instanceof Error ? error.message : "unknown error",
+      });
     }
-    await writeHeartbeat("launch-watcher", true, { state: "armed", owner: manifest.owner, checkedBlock: head.toString() });
     await delay(pollMs);
   }
   await writeHeartbeat("launch-watcher", false, { state: "expired", owner: manifest.owner });
+  await disarm();
   throw new Error("LAUNCH_WATCH_WINDOW_EXPIRED");
 }
 

@@ -86,6 +86,10 @@
 .wizard-wallet-map { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 14px; color: #777771; font: 10px DM Mono; }
 .wizard-wallet-map span { display: flex; gap: 7px; }
 .wizard-wallet-map b { color: #aaa9a3; font-weight: 400; }
+.wizard-backup { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #30302d; }
+.wizard-backup button, .wizard-backup label { min-height: 38px; display: grid; place-items: center; border: 1px solid #45453f; padding: 0 13px; color: #d8d8d1; background: #151613; font-size: 11px; cursor: pointer; }
+.wizard-backup input { display: none; }
+.wizard-backup small { flex: 1 1 280px; color: #777771; font-size: 11px; line-height: 1.45; }
 .admin-governance { margin-top: 16px; padding: 26px; border: 1px solid #30302d; background: rgba(17, 18, 16, .9); }
 .governance-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; margin-top: 24px; border: 1px solid #30302d; background: #30302d; }
 .governance-summary > div { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 16px; background: #121310; }

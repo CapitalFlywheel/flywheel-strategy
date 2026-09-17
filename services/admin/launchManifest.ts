@@ -1,11 +1,12 @@
 import {
   createPublicClient,
   getAddress,
-  http,
   keccak256,
   toBytes,
   type Address,
+  type PublicClient,
 } from "viem";
+import { rpcTransport } from "../shared/rpc";
 
 export const PONS_FACTORY = getAddress("0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e");
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
@@ -82,7 +83,9 @@ const ponsAbi = [{
   }],
 }] as const;
 
-const client = createPublicClient({ transport: http(PUBLIC_ROBINHOOD_RPC, { timeout: 12_000, retryCount: 2 }) });
+const client = createPublicClient({
+  transport: rpcTransport(process.env.ROBINHOOD_RPC_URL, process.env.ROBINHOOD_RPC_FALLBACK_URL),
+});
 const role = (name: string) => keccak256(toBytes(name));
 const DEFAULT_ADMIN_ROLE = `0x${"00".repeat(32)}` as const;
 
@@ -213,8 +216,21 @@ export async function verifyPostlaunchManifest(manifest: PostlaunchManifest): Pr
   ]);
 }
 
-export async function verifyPonsDetection(manifest: PrelaunchManifest, token: Address, curve: Address) {
-  const launch = await client.readContract({ address: PONS_FACTORY, abi: ponsAbi, functionName: "getLaunchedToken", args: [token] });
+export interface PonsLaunchRecord {
+  exists: boolean;
+  curve: Address;
+  deployer: Address;
+  creatorFeeRecipient: Address;
+  pairToken: Address;
+  creatorTaxBps: number;
+  buybackEnabled: boolean;
+}
+
+export function isExpectedPonsLaunch(
+  manifest: PrelaunchManifest,
+  launch: PonsLaunchRecord,
+  curve: Address,
+): boolean {
   return launch.exists
     && launch.curve.toLowerCase() === curve.toLowerCase()
     && launch.deployer.toLowerCase() === manifest.owner.toLowerCase()
@@ -222,4 +238,19 @@ export async function verifyPonsDetection(manifest: PrelaunchManifest, token: Ad
     && launch.pairToken.toLowerCase() === ZERO_ADDRESS
     && launch.creatorTaxBps === 200
     && !launch.buybackEnabled;
+}
+
+export async function verifyPonsDetection(
+  manifest: PrelaunchManifest,
+  token: Address,
+  curve: Address,
+  readClient: PublicClient = client,
+) {
+  const launch = await readClient.readContract({
+    address: PONS_FACTORY,
+    abi: ponsAbi,
+    functionName: "getLaunchedToken",
+    args: [token],
+  });
+  return isExpectedPonsLaunch(manifest, launch, curve);
 }

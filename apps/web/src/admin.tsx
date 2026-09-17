@@ -27,6 +27,7 @@ interface ControlStatus {
   services: Record<string, boolean>;
   updatedAt: number;
   owner?: Address;
+  activated?: boolean;
   lastAction?: { action: string; result: string; completedAt: number };
 }
 
@@ -142,6 +143,7 @@ export function AdminPanel() {
         method: "personal_sign",
         params: [challenge.message, connection.account],
       }) as Hex;
+      const requestedAt = Date.now();
       const actionResponse = await fetch("/admin/api/action", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -149,8 +151,24 @@ export function AdminPanel() {
       });
       if (!actionResponse.ok) throw new Error("Подпись не принята сервером");
       setMessage("Команда принята. Сервер выполняет её…");
-      await new Promise((resolve) => window.setTimeout(resolve, 2_500));
-      await refreshStatus();
+      let completed: ControlStatus | undefined;
+      for (let attempt = 0; attempt < 15; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+        const response = await fetch("/admin/api/status", { cache: "no-store" });
+        if (!response.ok) continue;
+        const next = await response.json() as ControlStatus;
+        setStatus(next);
+        if (next.lastAction?.action === action && next.lastAction.completedAt >= requestedAt) {
+          completed = next;
+          break;
+        }
+      }
+      if (!completed?.lastAction) throw new Error("Сервер не подтвердил выполнение команды");
+      if (completed.lastAction.result !== "success") {
+        throw new Error(action === "start_automation"
+          ? "Автоматизация не запущена: сначала завершите активацию проекта"
+          : "Сервер не смог остановить автоматизацию");
+      }
       setMessage(action === "start_automation" ? "Автоматизация запущена" : "Автоматизация остановлена");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Команда не выполнена");
@@ -212,7 +230,7 @@ export function AdminPanel() {
           </div>
 
           <div className="admin-controls">
-            <button type="button" className="admin-start" disabled={!isOwner || busy || allRunning} onClick={() => void control("start_automation")}>
+            <button type="button" className="admin-start" disabled={!isOwner || busy || allRunning || !status.activated} onClick={() => void control("start_automation")}>
               {busy ? "Подождите…" : "Включить автоматизацию"}
             </button>
             <button type="button" className="admin-stop" disabled={!isOwner || busy || allStopped} onClick={() => void control("stop_automation")}>
@@ -224,14 +242,14 @@ export function AdminPanel() {
 
         <aside className="admin-health-card">
           <span>ГОТОВНОСТЬ</span>
-          <strong>4 / 5</strong>
-          <div className="admin-meter"><i style={{ width: "80%" }} /></div>
+          <strong>5 / 5</strong>
+          <div className="admin-meter"><i style={{ width: "100%" }} /></div>
           <ul>
             <li className="done">Сервер работает</li>
             <li className="done">Alchemy Pay As You Go</li>
             <li className="done">Резервный RPC готов</li>
             <li className="done">Мастер основного запуска</li>
-            <li>Брендирование и домен</li>
+            <li className="done">Брендирование и домен</li>
           </ul>
           <small>Статус обновлён {statusAge < 15_000 ? "только что" : "с задержкой"}</small>
         </aside>

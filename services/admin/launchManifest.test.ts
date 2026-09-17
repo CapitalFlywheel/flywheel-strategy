@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { getAddress } from "viem";
-import { normalizePostlaunchManifest, normalizePrelaunchManifest } from "./launchManifest";
+import {
+  ZERO_ADDRESS,
+  isExpectedPonsLaunch,
+  normalizePostlaunchManifest,
+  normalizePrelaunchManifest,
+} from "./launchManifest";
 
 const owner = getAddress("0xB4d521f6c47F1DB4A89A82f0564646737ED41972");
 const address = (digit: string) => getAddress(`0x${digit.repeat(40)}`);
@@ -31,5 +36,25 @@ describe("admin launch manifest", () => {
   it("does not keep arbitrary payload fields", () => {
     const normalized = normalizePrelaunchManifest({ ...pre(), arbitraryCommand: "rm" }, owner);
     expect(normalized).not.toHaveProperty("arbitraryCommand");
+  });
+
+  it("accepts only the exact owner, creator wallet, ETH pair and fee settings", () => {
+    const manifest = normalizePrelaunchManifest(pre(), owner);
+    const curve = address("f");
+    const valid = {
+      exists: true,
+      curve,
+      deployer: owner,
+      creatorFeeRecipient: manifest.ponsFeeCollector,
+      pairToken: ZERO_ADDRESS,
+      creatorTaxBps: 200,
+      buybackEnabled: false,
+    };
+    expect(isExpectedPonsLaunch(manifest, valid, curve)).toBe(true);
+    expect(isExpectedPonsLaunch(manifest, { ...valid, deployer: address("1") }, curve)).toBe(false);
+    expect(isExpectedPonsLaunch(manifest, { ...valid, creatorFeeRecipient: address("2") }, curve)).toBe(false);
+    expect(isExpectedPonsLaunch(manifest, { ...valid, pairToken: address("3") }, curve)).toBe(false);
+    expect(isExpectedPonsLaunch(manifest, { ...valid, creatorTaxBps: 199 }, curve)).toBe(false);
+    expect(isExpectedPonsLaunch(manifest, { ...valid, buybackEnabled: true }, curve)).toBe(false);
   });
 });

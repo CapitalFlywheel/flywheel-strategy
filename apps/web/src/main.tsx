@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { formatUnits, type Address, type Hex } from "viem";
 import "./styles.css";
+import "./redesign.css";
 import { claimMstr, readActiveProposal, readClaimed, readMstrBalance, readMstrMultiplier, readProposal, robinhoodChain, voteOnProposal, waitForClaimReceipt, type ActiveProposal } from "./chain";
 import {
   connectInjectedWallet,
@@ -73,8 +74,8 @@ interface RuntimeConfig {
 interface PublicLinks { x?: string; github?: string }
 
 const governanceActions = [
-  "Accumulate MSTR", "Buyback + hold", "Buyback + burn",
-  "Buyback + lock", "Lock MSTR", "Marketing",
+  "Accumulate $MSTR", "Buyback + hold", "Buyback + burn",
+  "Buyback + lock", "Lock $MSTR", "Marketing",
 ];
 
 const cadence = [
@@ -85,11 +86,11 @@ const cadence = [
 ];
 
 const voteOptions = [
-  ["Accumulate MSTR", "Keep building the reserve"],
+  ["Accumulate $MSTR", "Keep building the reserve"],
   ["Buyback + hold", "Purchase the project token for reserve"],
   ["Buyback + burn", "Permanently reduce token supply"],
   ["Buyback + lock", "Lock purchased tokens for a selected term"],
-  ["Lock MSTR", "Time-lock MSTR inside the reserve"],
+  ["Lock $MSTR", "Time-lock $MSTR inside the reserve"],
   ["Marketing", "Send approved proceeds to the public wallet"]
 ];
 
@@ -104,16 +105,21 @@ function Stat({ label, value, detail }: { label: string; value: string; detail: 
 }
 
 function FlywheelMark({ className = "" }: { className?: string }) {
-  const blade = "M500 68 758 248 543 347 426 270Z";
-  return (
-    <svg className={className} viewBox="0 0 1000 1000" role="img" aria-label="FLYWHEEL STRATEGY">
-      <g>
-        {[0, 60, 120, 180, 240, 300].map((angle) => (
-          <path key={angle} d={blade} transform={`rotate(${angle} 500 500)`} />
-        ))}
-      </g>
-    </svg>
-  );
+  return <img className={className} src="/visuals/logo-rotation.gif" alt="FLYWHEEL STRATEGY" />;
+}
+
+function SectionIcon({ kind }: { kind: "flow" | "weight" | "cadence" | "history" | "automation" | "trade" | "convert" | "claim" }) {
+  const paths = {
+    flow: "M4 9 20 2l16 7-16 8L4 9Zm0 10 16 8 16-8M4 29l16 8 16-8",
+    weight: "M20 3v34M4 12h32M9 12 3 26h12L9 12Zm22 0-6 14h12l-6-14ZM12 37h16",
+    cadence: "M5 34V23h6v11H5Zm12 0V14h6v20h-6Zm12 0V4h6v30h-6",
+    history: "M5 18a15 15 0 1 1 2 11M5 6v12h12M20 10v11l7 4",
+    automation: "M20 3 35 12v17l-15 8L5 29V12L20 3Zm0 9 8 8-8 8-8-8 8-8Z",
+    trade: "M4 14h31l-7-7M36 27H5l7 7",
+    convert: "M6 17a14 14 0 0 1 25-7l4 5M35 5v10H25M34 24A14 14 0 0 1 9 31l-4-5M5 36V26h10",
+    claim: "M3 24h7v12H3V24Zm7 3 6-7h7c5 0 5 7 0 7h-5m6 0 9-7c3-2 6 2 3 5L24 35H10"
+  };
+  return <svg className="section-icon" viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true"><path d={paths[kind]} /></svg>;
 }
 
 function XLogoIcon() {
@@ -220,6 +226,16 @@ function plainText(text: string) {
   return text.trim().replace(/\.$/, "");
 }
 
+function scrollToPublicSection(event: React.MouseEvent<HTMLAnchorElement>, id: string) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  event.preventDefault();
+  const headerHeight = document.querySelector<HTMLElement>(".topbar")?.offsetHeight ?? 0;
+  const top = window.scrollY + target.getBoundingClientRect().top - headerHeight - 20;
+  window.history.pushState(null, "", `#${id}`);
+  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+}
+
 function inlineMarkdown(text: string) {
   return plainText(text).split(/(`[^`]+`)/g).map((part, index) =>
     part.startsWith("`") && part.endsWith("`")
@@ -311,7 +327,7 @@ function DocumentationPage() {
       <section className="subpage-hero docs-hero">
         <span>PUBLIC DOCUMENTATION</span>
         <h1>HOW THE FLYWHEEL WORKS</h1>
-        <p>Fees, MSTR rewards, holder weight, automation, governance and every important project rule in one place</p>
+        <p>Fees, $MSTR rewards, holder weight, automation, governance and every important project rule in one place</p>
       </section>
       <div className="docs-layout">
         <aside>
@@ -684,7 +700,7 @@ function App() {
     const entry = snapshot.entries.find((item) => item.account.toLowerCase() === account.toLowerCase());
     if (!entry) {
       setClaimable(0n);
-      setClaimStatus("No allocated MSTR in the latest epoch yet");
+      setClaimStatus("No allocated $MSTR in the latest epoch yet");
       return;
     }
     void readClaimed(rewardVault, account).then((alreadyClaimed) => {
@@ -788,7 +804,7 @@ function App() {
           </span>
         </a>
         <nav aria-label="Primary navigation">
-          <a href="/#mechanics">How it works</a>
+          <a href="/#mechanics" onClick={(event) => scrollToPublicSection(event, "mechanics")}>How it works</a>
           <a href="/#rewards">Rewards</a>
           <a href={activeProposal ? `/governance/${activeProposal.id.toString()}` : "/governance"} target="_blank" rel="noreferrer">Governance</a>
           <a href="/docs" target="_blank" rel="noreferrer">Documentation</a>
@@ -832,15 +848,19 @@ function App() {
 
       <section className="story-hero" id="top">
         <div className="hero-copy">
-          <h1>HOLD CAPITAL<br /><span>ACCUMULATE MSTR</span></h1>
-          <p>Trading fees continuously build MSTR rewards for passive holders and a separate holder-governed reserve</p>
+          <h1 className="hero-brand-title">FLYWHEEL<br /><span>STRATEGY</span></h1>
+          <p className="hero-slogan">HOLD CAPITAL<br />ACCUMULATE MSTR</p>
+          <p className="hero-description">Trading fees continuously build $MSTR rewards for passive holders and a separate holder-governed reserve</p>
           <div className="hero-actions">
             <button type="button" className="primary" onClick={() => setWalletModalOpen(true)}>Connect wallet</button>
-            <a href="#mechanics">See how it works ↓</a>
+            <a href="#mechanics" onClick={(event) => scrollToPublicSection(event, "mechanics")}>See how it works ↓</a>
           </div>
         </div>
         <div className="hero-symbol" aria-hidden="true">
-          <FlywheelMark className="hero-mark" />
+          <video className="bearing-visual" autoPlay muted loop playsInline preload="auto" poster="/visuals/header-3-wide-poster.webp">
+            <source src="/visuals/header-3-wide.webm" type="video/webm" />
+            <source src="/visuals/header-3-wide.mp4" type="video/mp4" />
+          </video>
           <span>CAPITAL IN MOTION</span>
         </div>
         <div className="hero-mechanics" id="mechanics">
@@ -848,16 +868,16 @@ function App() {
             <span>HOW IT WORKS</span>
             <p>ONE LOOP · THREE MOVES</p>
           </div>
-          <div><b>01</b><strong>TRADE</strong><span>Each buy and sell creates project fees</span></div>
-          <div><b>02</b><strong>CONVERT</strong><span>Automation uses those fees to buy MSTR</span></div>
-          <div><b>03</b><strong>CLAIM</strong><span>MSTR is shared by balance and exact hold time</span></div>
+          <div><SectionIcon kind="trade" /><b>01</b><strong>TRADE</strong><span>Each buy and sell creates project fees</span></div>
+          <div><SectionIcon kind="convert" /><b>02</b><strong>CONVERT</strong><span>Automation uses those fees to buy $MSTR</span></div>
+          <div><SectionIcon kind="claim" /><b>03</b><strong>CLAIM</strong><span>$MSTR is shared by balance and exact hold time</span></div>
         </div>
       </section>
 
       <section className="claim-panel first-action" id="rewards">
         <div>
           <span className="section-number">YOUR PASSIVE REWARDS</span>
-          <h2>{Number(formatUnits(claimable * mstrMultiplier / 10n ** 18n, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })} MSTR</h2>
+          <h2>{Number(formatUnits(claimable * mstrMultiplier / 10n ** 18n, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })} $MSTR</h2>
           <p>{claimStatus} · No staking or token lock is required</p>
           {snapshot && <small>Latest published epoch: {snapshot.epoch}</small>}
         </div>
@@ -870,8 +890,8 @@ function App() {
       </section>
 
       <section className="stats-grid">
-        <Stat label="Reward vault" value={`${rewardBalance} MSTR`} detail="Holder funds only" />
-        <Stat label="Strategic reserve" value={`${reserveBalance} MSTR`} detail="Governed separately" />
+        <Stat label="Reward vault" value={`${rewardBalance} $MSTR`} detail="Holder funds only" />
+        <Stat label="Strategic reserve" value={`${reserveBalance} $MSTR`} detail="Governed separately" />
         <Stat label="Reward interval" value={`${(marketStatus?.intervalSeconds ?? 600) / 60} min`} detail={marketStatus ? `$${Math.round(marketStatus.marketCapUsd).toLocaleString()} market cap` : "Starts at 10 minutes"} />
         <Stat label="Market phase" value={marketStatus?.phase === "uniswap-v4" ? "V4 pool" : marketStatus?.phase === "bonding-curve" ? "PONS curve" : "Pre-launch"} detail="Claim gas paid by holder" />
       </section>
@@ -881,24 +901,24 @@ function App() {
           <div className="panel-head">
             <div>
               <span className="section-number">01</span>
-              <h2>Fee flow</h2>
+              <SectionIcon kind="flow" /><h2>Fee flow</h2>
             </div>
             <span className="pill">3% trading fee</span>
           </div>
           <div className="flow">
-            <div><b>1.35%</b><span>Passive MSTR rewards</span></div>
-            <div><b>1.08%</b><span>Strategic MSTR reserve</span></div>
+            <div><b>1.35%</b><span>Passive $MSTR rewards</span></div>
+            <div><b>1.08%</b><span>Strategic $MSTR reserve</span></div>
             <div><b>0.27%</b><span>Automation</span></div>
             <div><b>0.30%</b><span>PONS protocol</span></div>
           </div>
-          <div className="route">ETH <i>→</i> WETH <i>→</i> USDG <i>→</i> MSTR</div>
+          <div className="route">ETH <i>→</i> WETH <i>→</i> USDG <i>→</i> $MSTR</div>
         </article>
 
         <article className="panel">
           <div className="panel-head">
             <div>
               <span className="section-number">02</span>
-              <h2>Holder weight</h2>
+              <SectionIcon kind="weight" /><h2>Holder weight</h2>
             </div>
             <span className="pill">No staking</span>
           </div>
@@ -912,7 +932,7 @@ function App() {
 
       <section className="panel cadence-panel">
         <div className="panel-head">
-          <div><span className="section-number">03</span><h2>Market-cap cadence</h2></div>
+          <div><span className="section-number">03</span><SectionIcon kind="cadence" /><h2>Market-cap cadence</h2></div>
           <span className="pill">60m confirmation</span>
         </div>
         <div className="cadence-grid">
@@ -926,7 +946,7 @@ function App() {
 
       <section className="panel reward-history">
         <div className="panel-head">
-          <div><span className="section-number">04</span><h2>Reward history</h2></div>
+          <div><span className="section-number">04</span><SectionIcon kind="history" /><h2>Reward history</h2></div>
           <span className="pill">Last 10 epochs · total distribution</span>
         </div>
         {rewardHistory.length ? (
@@ -946,12 +966,12 @@ function App() {
 
       <section className="panel operations">
         <div className="panel-head">
-          <div><span className="section-number">05</span><h2>Automation status</h2></div>
+          <div><span className="section-number">05</span><SectionIcon kind="automation" /><h2>Automation status</h2></div>
           <span className="pill">Public heartbeat</span>
         </div>
         <div className="operations-grid">
           {[
-            ["reward-keeper", "Fee collection + MSTR purchase"],
+            ["reward-keeper", "Fee collection + $MSTR purchase"],
             ["reward-publisher", "Reward calculation + publication"],
             ["governance-keeper", "Automatic vote execution"],
           ].map(([service, label]) => {

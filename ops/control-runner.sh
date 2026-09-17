@@ -96,7 +96,10 @@ PY
 
   local result="success"
   if [[ "$action" == "start_automation" ]]; then
-    if ! (cd "$APP_DIR" && docker compose start reward-keeper reward-publisher governance-keeper); then
+    if [[ ! -f "$MAIN_LAUNCH_DIR/postlaunch.json" ]]; then
+      echo "Refusing to start automation before verified postlaunch activation" >&2
+      result="failed_not_activated"
+    elif ! (cd "$APP_DIR" && docker compose up -d reward-keeper reward-publisher governance-keeper); then
       result="failed"
     fi
   elif [[ "$action" == "stop_automation" ]]; then
@@ -104,7 +107,7 @@ PY
       result="failed"
     fi
   elif [[ "$action" == "register_prelaunch" ]]; then
-    if ! (cd "$APP_DIR" && docker compose run --rm --no-deps web npx tsx scripts/verify-admin-manifest.ts "/app/data/control/processing/$name"); then
+    if ! (cd "$APP_DIR" && docker compose run --rm --no-deps --env-from-file .env.server web npx tsx scripts/verify-admin-manifest.ts "/app/data/control/processing/$name"); then
       result="failed"
     elif ! python3 - "$processing" "$MAIN_LAUNCH_DIR/prelaunch.json" <<'PY'
 import json, os, sys, tempfile
@@ -139,7 +142,7 @@ PY
       mv "$MAIN_LAUNCH_DIR/armed.json" "$ARCHIVE_DIR/cancelled-armed-$(date +%s).json"
     fi
   elif [[ "$action" == "activate_postlaunch" ]]; then
-    if ! (cd "$APP_DIR" && docker compose run --rm --no-deps web npx tsx scripts/verify-admin-manifest.ts "/app/data/control/processing/$name"); then
+    if ! (cd "$APP_DIR" && docker compose run --rm --no-deps --env-from-file .env.server web npx tsx scripts/verify-admin-manifest.ts "/app/data/control/processing/$name"); then
       result="failed"
     elif ! python3 "$APP_DIR/ops/activate-postlaunch.py" "$processing"; then
       result="failed"
@@ -176,6 +179,9 @@ while true; do
   for request in "${requests[@]}"; do
     process_request "$request"
   done
+  if [[ -f "$MAIN_LAUNCH_DIR/armed.json" ]] && ! service_running launch-watcher; then
+    (cd "$APP_DIR" && docker compose up -d launch-watcher) || true
+  fi
   write_status
   sleep 2
 done

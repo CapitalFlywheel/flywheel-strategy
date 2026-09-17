@@ -113,15 +113,25 @@ async function sendTransaction(
   onProgress: ProgressCallback,
 ): Promise<{ hash: Hex; contractAddress?: Address }> {
   await ensureRobinhoodChain(provider);
-  const hash = await provider.request({
-    method: "eth_sendTransaction",
-    params: [{ from: account, ...transaction }],
-  }) as Hex;
-  progress.pending = { label, hash };
-  onProgress({ ...progress }, `${label}: транзакция отправлена`);
+  let hash: Hex;
+  if (progress.pending) {
+    if (progress.pending.label !== label) {
+      throw new Error(`Сначала восстановите незавершённую транзакцию: ${progress.pending.label}`);
+    }
+    hash = progress.pending.hash;
+    onProgress({ ...progress }, `${label}: проверяем ранее отправленную транзакцию`);
+  } else {
+    hash = await provider.request({
+      method: "eth_sendTransaction",
+      params: [{ from: account, ...transaction }],
+    }) as Hex;
+    progress.pending = { label, hash };
+    onProgress({ ...progress }, `${label}: транзакция отправлена`);
+  }
   const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 180_000 });
   if (receipt.status !== "success") throw new Error(`${label}: транзакция завершилась с ошибкой`);
   progress.pending = undefined;
+  onProgress({ ...progress }, `${label}: транзакция подтверждена`);
   return { hash, contractAddress: receipt.contractAddress ? getAddress(receipt.contractAddress) : undefined };
 }
 

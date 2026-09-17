@@ -63,7 +63,13 @@ Alert immediately when:
 - If a quote/swap fails, do not loosen the 20% limit. Wait for the next cycle or use the already allowlisted fallback route.
 - If the publisher and chain disagree without a matching prepared snapshot, stop publication and investigate. Do not guess state.
 - A failed governance swap leaves the whole execution transaction reverted, so the automatic executor retries the same winning option and parameters.
+- The launch watcher persists its next unread block. After a process or host restart it resumes from that cursor and never advances the cursor after an RPC error.
+- If a launch was already detected, the watcher resumes PONS migration tracking from `data/control/main-launch/detected.json`.
+- The panel stores a pending transaction hash before waiting for confirmation. On reload it waits for that same hash rather than sending a duplicate transaction.
+- Export the launch-progress JSON after each main phase. Use one dedicated browser profile on launch day and import this file before changing workstations.
 
 ## Backups
 
 Back up the reward state, every epoch JSON, governance snapshots, deployment JSON, live verification output and transaction hashes. These contain no private keys and should be publicly mirrored after launch.
+
+The host backup script and control runner must remain executable. Verify both after every Windows-to-Linux deployment because losing the executable bit or converting shell scripts to CRLF prevents systemd from starting them.

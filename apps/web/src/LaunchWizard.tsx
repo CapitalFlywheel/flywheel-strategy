@@ -85,6 +85,34 @@ export function LaunchWizard({ connection, isOwner }: { connection?: ConnectedWa
     setStatus(label);
   };
 
+  function exportProgress() {
+    if (!owner) return;
+    const blob = new Blob([JSON.stringify(progress, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `flywheel-launch-progress-${owner.toLowerCase()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus("Резервная копия прогресса скачана");
+  }
+
+  async function importProgress(file?: File) {
+    if (!file || !owner) return;
+    try {
+      const next = JSON.parse(await file.text()) as WizardProgress;
+      const savedOwner = next.prelaunch?.owner;
+      if (savedOwner && savedOwner.toLowerCase() !== owner.toLowerCase()) {
+        throw new Error("Файл создан для другого кошелька владельца");
+      }
+      saveWizardProgress(owner, next);
+      setProgress(next);
+      setStatus("Прогресс восстановлен из резервной копии");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Не удалось импортировать прогресс");
+    }
+  }
+
   async function signedAction(action: string, payload?: PrelaunchManifest | PostlaunchManifest) {
     if (!connection || !isOwner) throw new Error("Подключите кошелёк владельца");
     const challengeResponse = await fetch("/admin/api/challenge", {
@@ -231,12 +259,20 @@ export function LaunchWizard({ connection, isOwner }: { connection?: ConnectedWa
         </div>
       )}
 
-      {server.activated && <div className="wizard-complete"><b>Основной проект полностью активирован</b><small>Дальше остаются брендирование, финальный дизайн и домен.</small></div>}
+      {server.activated && <div className="wizard-complete"><b>Основной проект полностью активирован</b><small>Контракты проверены, публичная конфигурация опубликована, автоматизация включена</small></div>}
 
       <div className="wizard-wallet-map">
         <span>Автоматизация <b>{short(DEFAULT_AUTOMATION)}</b></span>
         <span>Публикация наград <b>{short(DEFAULT_PUBLISHER)}</b></span>
         <span>Маркетинг <b>{short(DEFAULT_MARKETING)}</b></span>
+      </div>
+      <div className="wizard-backup">
+        <button type="button" disabled={!owner} onClick={exportProgress}>Скачать прогресс запуска</button>
+        <label>
+          Восстановить прогресс
+          <input type="file" accept="application/json,.json" disabled={!owner || busy} onChange={(event) => void importProgress(event.target.files?.[0])} />
+        </label>
+        <small>Сохраните файл после каждого этапа и передайте его команде по защищённому каналу</small>
       </div>
     </section>
   );

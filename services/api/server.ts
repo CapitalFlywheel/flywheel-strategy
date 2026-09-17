@@ -39,7 +39,11 @@ const mimeTypes: Record<string, string> = {
   ".json": "application/json; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".gif": "image/gif",
   ".png": "image/png",
+  ".webp": "image/webp",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
 };
 
 function safePath(root: string, pathname: string): string | undefined {
@@ -155,15 +159,23 @@ const server = createServer(async (request, response) => {
     }
 
     if (url.pathname === "/admin/api/status" && request.method === "GET") {
+      let activated = false;
+      try {
+        await stat(resolve(controlDataRoot, "main-launch", "postlaunch.json"));
+        activated = true;
+      } catch {
+        activated = false;
+      }
       try {
         const body = JSON.parse(await readFile(resolve(controlDataRoot, "status.json"), "utf8"));
-        return jsonResponse(response, 200, { ...body, owner: adminOwner });
+        return jsonResponse(response, 200, { ...body, owner: adminOwner, activated });
       } catch {
         return jsonResponse(response, 200, {
           automationState: "unknown",
           services: {},
           updatedAt: 0,
           owner: adminOwner,
+          activated,
         });
       }
     }

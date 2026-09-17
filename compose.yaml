@@ -61,7 +61,7 @@ services:
 
   launch-watcher:
     <<: *app
-    restart: "no"
+    restart: unless-stopped
     command: npm run keeper:launch-watcher
     env_file:
       - .env.server
