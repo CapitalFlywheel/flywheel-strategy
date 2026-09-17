@@ -26,6 +26,15 @@ else
   fail "web health endpoint failed"
 fi
 
+panel_path="$(docker compose exec -T web printenv ADMIN_PANEL_PATH 2>/dev/null || true)"
+hidden_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:8787${panel_path}" || true)"
+public_admin_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8787/admin || true)"
+if [[ -n "$panel_path" && "$hidden_status" == "200" && "$public_admin_status" == "404" ]]; then
+  pass "hidden panel responds and public /admin stays unavailable"
+else
+  fail "hidden panel routing is not configured correctly"
+fi
+
 if [[ -x ops/control-runner.sh && -x ops/backup-data.sh ]]; then
   pass "systemd shell scripts are executable"
 else
