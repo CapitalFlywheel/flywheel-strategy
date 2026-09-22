@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-The repository is prepared for a Solana relaunch but is not authorized for mainnet activation
+The repository is prepared for a Solana launch but is not authorized for mainnet activation
 
 The CAPITAL mint, project Solana wallets, production RPC endpoints and new X account are intentionally absent
 

@@ -97,6 +97,6 @@ The X link remains intentionally unpublished until the new Solana account is sup
 
 ## Current status
 
-The Solana relaunch is not deployed yet
+The Solana version is not deployed yet
 
 The CAPITAL mint and final program addresses will appear only after the verified Pump.fun launch and production checks

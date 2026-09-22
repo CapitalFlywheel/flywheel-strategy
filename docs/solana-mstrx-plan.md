@@ -1,4 +1,4 @@
-# FLYWHEEL STRATEGY Solana relaunch plan
+# FLYWHEEL STRATEGY Solana MSTRx plan
 
 Status: architecture preparation. This document does not authorize a mainnet launch or replace live configuration
 

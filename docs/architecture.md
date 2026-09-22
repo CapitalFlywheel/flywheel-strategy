@@ -80,4 +80,4 @@ The browser cannot provide shell commands, executable paths or arbitrary seriali
 
 Robinhood contracts, chain configuration, epochs, manifests and keepers remain in the repository only as legacy audit history
 
-They are excluded from Solana production configuration and must never share state directories, service names, environment variables or deployment manifests with the relaunch
+They are excluded from Solana production configuration and must never share state directories, service names, environment variables or deployment manifests with the Solana version
