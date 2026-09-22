@@ -6,7 +6,7 @@ COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 COPY . .
 RUN npm run web:build && npx tsc --noEmit && npx tsc -p apps/web/tsconfig.json --noEmit
-RUN mkdir -p /app/node_modules/.vite && chown -R node:node /app/cache /app/artifacts /app/node_modules/.vite
+RUN mkdir -p /app/cache /app/artifacts /app/node_modules/.vite && chown -R node:node /app/cache /app/artifacts /app/node_modules/.vite
 ENV NODE_ENV=production
 USER node
 CMD ["npm", "run", "web:serve"]
