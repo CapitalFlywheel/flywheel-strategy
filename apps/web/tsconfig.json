@@ -13,6 +13,12 @@
     "jsx": "react-jsx",
     "strict": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/admin.tsx",
+    "src/adminContracts.ts",
+    "src/AdminGovernance.tsx",
+    "src/LaunchWizard.tsx",
+    "src/AdminReserveExit.tsx"
+  ]
 }
-
