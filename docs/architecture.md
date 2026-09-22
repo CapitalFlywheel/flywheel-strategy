@@ -1,81 +1,83 @@
-# Technical architecture — pre-launch
+# Solana architecture
 
-This document describes the first implementation, not a production launch approval.
+## Boundaries
 
-## Money flow
+FLYWHEEL STRATEGY is split into independent custody, accounting and execution boundaries
 
-1. PONS records the project's creator fee in its shared `FeeEscrow` for `PonsFeeCollector`.
-2. Anyone can call `collect()`; the collector claims the ETH and forwards it to `FeeRouter`.
-3. Anyone can call `allocate()`; the router splits the received ETH 50/40/10.
-4. The automation bot buys MSTR for the 50% reward part and sends it directly to `RewardVault`.
-5. The bot buys MSTR for the 40% strategic part and sends it directly to `StrategicReserveVault`.
-6. The final 10% goes to `KeeperVault`, which reimburses approved automation jobs under a per-transaction cap.
+```text
+Pump curve creator vault ─┐
+                         ├─► controlled creator MSTRx ATA ─► finalized receipt ledger
+PumpSwap creator vault ──┘                              │
+                                                       ├─► 60% MSTRx reward inventory
+                                                       └─► 40% MSTRx reserve inventory
 
-The PONS protocol fee never enters these contracts. With the current economic model, 2.7% of trade volume reaches the project and is split into 1.35% rewards, 1.08% reserve and 0.27% automation. The remaining 0.30% is the PONS fee. These assumptions must be confirmed against the final PONS V2 launch transaction.
+finalized CAPITAL history ─► deterministic holder weights ─► funded epoch ─► push batches
+```
 
-## Passive rewards
+## Public configuration
 
-`services/indexer/holdingMath.ts` reconstructs token lots from transfers. Every second held adds weight, while the loyalty multiplier changes every full hour and reaches its cap after 720 hours. A partial sale consumes the newest lots first. A wallet-to-wallet transfer starts a new holding age for the recipient.
+`config/solana-mainnet.json` fixes the public network, Pump programs, official MSTRx quote mint, fixed 200 bps creator fee and 60/40 allocation
 
-The indexer publishes cumulative allocations as a Merkle root. `RewardVault` verifies the proof and sends official MSTR to the holder. There is no staking and no token approval. The holder pays only the gas for `claim()`.
+Live wallet and program addresses are absent until verified. No placeholder address may be promoted into production
 
-`distribution.ts` divides raw on-chain MSTR units by weight, assigns integer dust deterministically and produces the cumulative Merkle tree used by the contract. Tokenized-stock display multipliers must be applied only in the UI, never to these raw contract amounts.
+## Fee ingress
 
-Reward epochs use the irreversible market-cap schedule in `rewardCadence.ts`: 10, 20, 30 or 60 minutes. `marketCap.ts` reads the PONS curve before graduation and the PONS V4 pool afterward, combines the token/ETH price with the WETH/USDG V4 price, and requires a full continuously observed hour over the next threshold. Monitoring gaps longer than two minutes restart an unconfirmed hour.
+`services/solana/pumpFees.ts` uses the official Pump SDK V2 creator-fee instructions for a non-SOL quote, spanning the bonding-curve and PumpSwap paths
 
-## Wallet connection
+The operational runner must independently verify the creator, coin mint, quote mint, fee phase and destination before simulating or signing a collection transaction. Allocation uses the confirmed creator-account balance delta from that collection rather than sweeping the wallet's unrelated MSTRx
 
-The web application discovers browser extensions through EIP-6963, so MetaMask, Rabby, Zerion and other installed EVM wallets appear as separate choices even when several extensions are enabled. A legacy EIP-1193 fallback remains for older wallets. The selected provider is used for every claim and governance transaction; the application never requests or stores private keys.
+The launch detector watches the approved creator only after the owner's one-time arm timestamp. It decodes the Pump create event, fails closed on multiple launches and activates only after two-provider verification of the mint, MSTRx quote, Token-2022 program, fixed 200 bps fee and disabled native holder rewards
 
-Mobile wallets connect through WalletConnect. Before public launch, create a Reown Cloud project for the final website domain and set its public project identifier as `VITE_REOWN_PROJECT_ID`. The identifier is public frontend configuration, not a wallet secret. The final domain must match the metadata configured in Reown.
+## Allocation and conversion
 
-Robinhood Chain is added or selected automatically with chain ID `4663`, ETH gas, the official public RPC and Blockscout explorer. Compatibility still depends on the wallet application itself. Phantom is discoverable through EIP-6963, but its currently documented EVM network list does not include Robinhood Chain; the UI therefore gives a clear error and recommends Zerion, Rabby or MetaMask if Phantom rejects the network.
+`services/solana/mstrxTransfers.ts` allocates exact finalized raw MSTRx receipts
 
-## Governance
+- Holder share: floor(receipts × 6000 / 10000)
+- Reserve share: receipts minus holder share
+- Indivisible raw-unit dust therefore remains in the reserve share
 
-Only the team can create a proposal. A proposal contains between two and six allowlisted actions, lasts 1–12 hours and becomes executable five minutes after voting ends.
+This construction preserves every received raw MSTRx unit. No swap, price route or conversion slippage exists in the fee path
 
-Voting weights are calculated by the indexer from balance and holding time, with a maximum 24-hour governance lookback. The Merkle root and every holder weight must be published for public verification. Quorum is 7% of all available voting weight.
+MSTRx uses Token-2022 transfer-hook extensions. Every routed or distributed transfer is built with the extension-aware SPL helper and simulated before signing
 
-When a proposal starts, every percentage is converted into an exact MSTR amount and stored. That exact amount does not grow when more MSTR later enters the reserve. Only one proposal can be active, preventing two votes from reserving the same MSTR.
+## Reward accounting
 
-`RestrictedExecutor` supports exactly six actions:
+The existing exact hold-time model is ported to finalized Solana token history
 
-- accumulate;
-- buy back and hold;
-- buy back and burn;
-- buy back and lock;
-- lock MSTR;
-- sell MSTR for the public marketing wallet.
+The indexer must checkpoint slot, block identity and signature cursor and must not advance if providers disagree. Reorged or merely confirmed state is not eligible
 
-The winning action is executed automatically by keeper bots. The team has no cancel function and does not confirm the result again. Smart contracts cannot wake themselves, so the bot supplies the transaction that triggers the already-fixed contract result five minutes after voting ends.
+Every epoch records
 
-`services/keeper/governanceKeeper.ts` checks every 15 seconds and submits all due proposals. Production should run at least two independent copies so one server failure does not delay execution. Completed automation transactions are reimbursed from `KeeperVault` under a per-transaction cap and cannot be reimbursed twice.
+- Finalized receipt range
+- Exact funded raw MSTRx amount
+- Eligible holder snapshot and exclusions
+- Deterministic allocation file hash
+- Deterministic batch identifiers
+- Transfer signatures and processed totals
+- Final conservation proof
 
-## Contracts
+## Automatic distribution
 
-- `FeeRouter.sol` — receives and splits creator-fee ETH.
-- `RewardVault.sol` — isolated MSTR rewards and cumulative claims.
-- `StrategicReserveVault.sol` — isolated MSTR reserve and lock tranches.
-- `KeeperVault.sol` — visible automation budget with reimbursement cap.
-- `GovernanceController.sol` — proposals, weighted votes, quorum and delay.
-- `RestrictedExecutor.sol` — fixed governance action allowlist and 20% maximum slippage instruction.
-- `IMstrSwapAdapter.sol` — boundary for reward/reserve MSTR purchases.
-- `IReserveActionAdapter.sol` — boundary for buybacks and marketing sales.
-- `RobinhoodReserveActionAdapter.sol` — fixed MSTR/WETH and PONS V4 reserve routes.
-- `ProjectTokenTimeLockVault.sol` — enforces voted buyback locks before permanent hold custody.
-- `ProjectTokenHoldVault.sol` — permanent public custody with no withdrawal or admin path.
+The distributor creates recipient Token-2022 associated token accounts when required and pays their rent from the separately funded operator wallet
 
-## Trust and launch blockers
+Every batch is idempotent. Restarts load processed batch identifiers and confirmed signatures before building another transaction
 
-Production swap adapters enforce the verified token/router addresses, fixed pool fee tiers, two-minute deadlines, maximum 20% slippage and a 10 ETH maximum chunk for fee conversion. The reserve buyback adapter only activates after the PONS V4 graduation pool exists; the brief graduation transition cannot be traded through governance.
+The owner may pause future routing and commitments and recover only the MSTRx still present in the creator address or another explicitly uncommitted account. A completed holder transfer is not recoverable
 
-The root publisher can affect holder allocations. Production needs two independent indexer instances, deterministic snapshot files, a public recomputation tool and a delayed root publication flow. Admin roles must move from the deployer to a clearly disclosed control setup after deployment.
+## Strategic reserve
 
-Still required before real money:
+Reserve inventory is held separately from the reward vault. Governance is a new Solana execution layer and does not reuse Solidity contracts
 
-1. Run the live configuration verifier again at the launch block.
-2. Fill the final team, publisher, automation, admin and public marketing addresses.
-3. Complete an external smart-contract audit and resolve its findings.
-4. Rehearse the signed deployment and keeper setup with owner-controlled test keys.
-5. Select branding, publish verified source and disclose every final address.
+Only fixed action variants are valid. Arbitrary instructions, arbitrary recipients and browser-supplied transaction data are rejected
+
+## Control plane
+
+The hidden panel requests a short-lived challenge for one allowlisted action. The owner signs the exact message in a Solana wallet. The server verifies Ed25519 ownership and writes a mode-600 request into a constrained queue
+
+The browser cannot provide shell commands, executable paths or arbitrary serialized transactions
+
+## Legacy isolation
+
+Robinhood contracts, chain configuration, epochs, manifests and keepers remain in the repository only as legacy audit history
+
+They are excluded from Solana production configuration and must never share state directories, service names, environment variables or deployment manifests with the relaunch

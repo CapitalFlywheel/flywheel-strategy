@@ -1,0 +1,52 @@
+{
+  "network": {
+    "name": "Solana Mainnet Beta",
+    "cluster": "mainnet-beta",
+    "publicRpcUrl": "https://api.mainnet-beta.solana.com",
+    "explorerUrl": "https://solscan.io"
+  },
+  "programs": {
+    "pump": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+    "pumpAmm": "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
+    "pumpFees": "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ",
+    "token2022": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "associatedToken": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+  },
+  "assets": {
+    "wrappedSol": {
+      "mint": "So11111111111111111111111111111111111111112",
+      "decimals": 9
+    },
+    "usdc": {
+      "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "decimals": 6
+    },
+    "mstrx": {
+      "name": "MicroStrategy xStock",
+      "symbol": "MSTRx",
+      "mint": "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ",
+      "decimals": 8,
+      "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+    }
+  },
+  "launch": {
+    "venue": "pump.fun",
+    "quoteAsset": "MSTRx",
+    "quoteMint": "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ",
+    "holderRewardMode": false,
+    "creatorFeeModel": "fixed-custom-pair",
+    "fixedCreatorFeeBps": 200,
+    "projectMint": null,
+    "creator": null
+  },
+  "allocation": {
+    "holderRewardsBps": 6000,
+    "strategicReserveBps": 4000
+  },
+  "rewards": {
+    "mode": "automatic-push",
+    "claimRequired": false,
+    "rewardAsset": "MSTRx"
+  },
+  "verifiedAt": "2026-09-22"
+}

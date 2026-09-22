@@ -1,14 +1,17 @@
 {
-  "name": "pons-mstr-strategy",
+  "name": "flywheel-strategy-solana",
   "version": "0.1.0",
   "private": true,
-  "description": "Passive MSTR rewards and governed reserve for a PONS V2 token on Robinhood Chain",
+  "description": "Automatic MSTRx holder rewards and a strategic reserve funded by Pump.fun creator fees on Solana",
   "scripts": {
-    "compile": "hardhat compile",
-    "test": "hardhat test",
+    "compile": "npm run compile:legacy",
+    "compile:legacy": "hardhat compile",
+    "test": "npm run test:solana && npm run test:web",
+    "test:solana": "vitest run services/solana services/indexer/holdingMath.test.ts services/indexer/distribution.test.ts",
+    "test:legacy": "hardhat test",
     "test:indexer": "vitest run services",
     "test:web": "vitest run apps/web/src/wallets.test.ts",
-    "test:all": "npm run test && npm run test:indexer && npm run test:web",
+    "test:all": "npm run test && npm run test:indexer && npm run test:legacy",
     "test:fork": "cross-env ROBINHOOD_FORK=true RUN_FORK_TESTS=true hardhat test test/fork.mstr.test.js",
     "deploy:local": "hardhat run scripts/deploy-local.js",
     "deploy:prelaunch": "hardhat run scripts/deploy-prelaunch.js --network robinhood",
@@ -31,6 +34,7 @@
     "keeper:launch-watcher": "tsx services/keeper/launchWatcher.ts",
     "keeper:rewards": "tsx services/keeper/rewardKeeper.ts",
     "keeper:publisher": "tsx services/keeper/rewardPublisher.ts",
+    "solana:control-runner": "tsx services/solana/controlRunner.ts",
     "security:secrets": "node scripts/check-public-secrets.mjs",
     "web:dev": "vite --config apps/web/vite.config.ts",
     "web:build": "vite build --config apps/web/vite.config.ts",
@@ -38,9 +42,16 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "5.4.0",
+    "@pump-fun/pump-sdk": "^2.0.0",
+    "@solana/spl-token": "0.4.15",
+    "@solana/wallet-adapter-react": "^0.15.40",
+    "@solana/wallet-adapter-react-ui": "^0.9.40",
+    "@solana/web3.js": "^1.99.0",
     "@walletconnect/ethereum-provider": "2.24.0",
+    "bs58": "^6.0.0",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "tweetnacl": "1.0.3"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "5.0.0",

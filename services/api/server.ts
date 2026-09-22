@@ -3,7 +3,20 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
-import { getAddress, keccak256, toBytes, verifyMessage, type Address, type Hex } from "viem";
+import {
+  createPublicClient,
+  decodeFunctionResult,
+  encodeFunctionData,
+  encodePacked,
+  getAddress,
+  http,
+  keccak256,
+  parseAbi,
+  toBytes,
+  verifyMessage,
+  type Address,
+  type Hex,
+} from "viem";
 import {
   normalizePostlaunchManifest,
   normalizePrelaunchManifest,
@@ -11,6 +24,9 @@ import {
   verifyPrelaunchManifest,
 } from "../admin/launchManifest";
 import { normalizeGovernanceDraft } from "../admin/governanceDraft";
+import { PublicKey } from "@solana/web3.js";
+import bs58 from "bs58";
+import nacl from "tweetnacl";
 
 const port = Number(process.env.PORT || "8787");
 const staticRoot = resolve(process.env.WEB_STATIC_ROOT || "dist/web");
@@ -19,6 +35,19 @@ const controlDataRoot = resolve(process.env.CONTROL_DATA_ROOT || "data/control")
 const adminOwner = process.env.ADMIN_OWNER_ADDRESS
   ? getAddress(process.env.ADMIN_OWNER_ADDRESS)
   : undefined;
+const reserveVault = process.env.RESERVE_VAULT_ADDRESS
+  ? getAddress(process.env.RESERVE_VAULT_ADDRESS)
+  : undefined;
+const mstrToken = process.env.VITE_MSTR_ADDRESS
+  ? getAddress(process.env.VITE_MSTR_ADDRESS)
+  : undefined;
+const wethToken = getAddress("0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73");
+const v3Quoter = getAddress("0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7");
+const reserveQuoteAbi = parseAbi(["function availableBalance() view returns (uint256)"]);
+const erc20QuoteAbi = parseAbi(["function balanceOf(address account) view returns (uint256)"]);
+const quoterAbi = parseAbi([
+  "function quoteExactInput(bytes path,uint256 amountIn) returns (uint256 amountOut,uint160[] sqrtPriceX96AfterList,uint32[] initializedTicksCrossedList,uint256 gasEstimate)",
+]);
 const adminPanelPath = (() => {
   const value = process.env.ADMIN_PANEL_PATH?.trim().replace(/\/$/, "");
   if (!value) return undefined;
@@ -31,7 +60,19 @@ const allowedAdminActions = new Set([
   "start_automation", "stop_automation", "register_prelaunch", "arm_launch_detection",
   "cancel_launch_detection", "activate_postlaunch", "prepare_governance",
 ]);
+const solanaAdminOwner = (() => {
+  const value = process.env.SOLANA_ADMIN_OWNER?.trim();
+  if (!value) return undefined;
+  return new PublicKey(value).toBase58();
+})();
+const allowedSolanaActions = new Set([
+  "verify_launch_config", "arm_launch_detection", "disarm_launch_detection", "activate_postlaunch",
+  "sweep_curve_fees", "sweep_pumpswap_fees", "pause_conversions", "resume_conversions",
+  "recover_uncommitted",
+  "prepare_reward_epoch", "distribute_reward_epoch", "finalize_reward_epoch",
+]);
 const challenges = new Map<string, { action: string; message: string; expiresAt: number; payload?: unknown }>();
+const solanaChallenges = new Map<string, { action: string; message: string; expiresAt: number }>();
 const mimeTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -67,6 +108,72 @@ function jsonResponse(response: import("node:http").ServerResponse, status: numb
   response.end(JSON.stringify(body));
 }
 
+async function verifiedReserveQuote(requestedAmount?: bigint) {
+  const primaryUrl = process.env.ROBINHOOD_RPC_URL?.trim();
+  const fallbackUrl = process.env.ROBINHOOD_RPC_FALLBACK_URL?.trim();
+  if (!primaryUrl || !fallbackUrl || !reserveVault || !mstrToken || !adminOwner) {
+    return { ok: false, reason: "quote_providers_unavailable" } as const;
+  }
+
+  const clients = [
+    createPublicClient({ transport: http(primaryUrl, { timeout: 12_000 }) }),
+    createPublicClient({ transport: http(fallbackUrl, { timeout: 12_000 }) }),
+  ];
+  const latest = await Promise.all(clients.map((client) => client.getBlockNumber()));
+  const commonBlock = (latest[0] < latest[1] ? latest[0] : latest[1]) - 2n;
+  if (commonBlock <= 0n || (latest[0] > latest[1] ? latest[0] - latest[1] : latest[1] - latest[0]) > 8n) {
+    return { ok: false, reason: "quote_providers_out_of_sync" } as const;
+  }
+
+  const blocks = await Promise.all(clients.map((client) => client.getBlock({ blockNumber: commonBlock })));
+  if (!blocks[0].hash || blocks[0].hash !== blocks[1].hash) {
+    return { ok: false, reason: "quote_block_disagreement" } as const;
+  }
+
+  const snapshots = await Promise.all(clients.map(async (client) => {
+    const available = await client.readContract({
+      address: reserveVault,
+      abi: reserveQuoteAbi,
+      functionName: "availableBalance",
+      blockNumber: commonBlock,
+    });
+    const walletMstr = await client.readContract({
+      address: mstrToken,
+      abi: erc20QuoteAbi,
+      functionName: "balanceOf",
+      args: [adminOwner],
+      blockNumber: commonBlock,
+    });
+    const amountIn = requestedAmount ?? (available > 0n ? available : walletMstr);
+    if (amountIn < 0n || (available > 0n ? amountIn !== available : amountIn > walletMstr)) {
+      throw new Error("QUOTE_AMOUNT_INVALID");
+    }
+    if (amountIn === 0n) return { available, walletMstr, amountIn, amountOut: 0n };
+    const path = encodePacked(["address", "uint24", "address"], [mstrToken, 10_000, wethToken]);
+    const data = encodeFunctionData({ abi: quoterAbi, functionName: "quoteExactInput", args: [path, amountIn] });
+    const result = await client.call({ to: v3Quoter, data, blockNumber: commonBlock });
+    if (!result.data) throw new Error("QUOTE_EMPTY");
+    const amountOut = decodeFunctionResult({ abi: quoterAbi, functionName: "quoteExactInput", data: result.data })[0];
+    return { available, walletMstr, amountIn, amountOut };
+  }));
+
+  const [left, right] = snapshots;
+  if (left.available !== right.available || left.walletMstr !== right.walletMstr
+    || left.amountIn !== right.amountIn || left.amountOut !== right.amountOut) {
+    return { ok: false, reason: "quote_state_disagreement" } as const;
+  }
+
+  return {
+    ok: true,
+    blockNumber: commonBlock.toString(),
+    blockHash: blocks[0].hash,
+    source: left.available > 0n && left.amountIn === left.available ? "reserve" : "admin_wallet",
+    amountIn: left.amountIn.toString(),
+    amountOut: left.amountOut.toString(),
+    providers: 2,
+  } as const;
+}
+
 async function readJsonBody(request: import("node:http").IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -82,6 +189,9 @@ async function readJsonBody(request: import("node:http").IncomingMessage): Promi
 function cleanChallenges(now = Date.now()) {
   for (const [id, challenge] of challenges) {
     if (challenge.expiresAt < now) challenges.delete(id);
+  }
+  for (const [id, challenge] of solanaChallenges) {
+    if (challenge.expiresAt < now) solanaChallenges.delete(id);
   }
 }
 
@@ -151,11 +261,107 @@ async function queueAdminAction(challengeId: string, signature: Hex) {
   return { ok: true, requestId, action: challenge.action };
 }
 
+function solanaAdminChallenge(action: string) {
+  if (!solanaAdminOwner || !allowedSolanaActions.has(action)) return;
+  cleanChallenges();
+  const id = randomBytes(20).toString("hex");
+  const issuedAt = Date.now();
+  const expiresAt = issuedAt + 5 * 60_000;
+  const message = [
+    "FLYWHEEL STRATEGY SOLANA CONTROL",
+    `Action: ${action}`,
+    `Owner: ${solanaAdminOwner}`,
+    "Network: Solana Mainnet Beta",
+    "Allocation: 60% holders / 40% strategic reserve",
+    `Issued: ${new Date(issuedAt).toISOString()}`,
+    `Expires: ${new Date(expiresAt).toISOString()}`,
+    `Nonce: ${id}`,
+  ].join("\n");
+  solanaChallenges.set(id, { action, message, expiresAt });
+  return { id, action, message, expiresAt, owner: solanaAdminOwner };
+}
+
+async function queueSolanaAdminAction(challengeId: string, signer: string, signature: string) {
+  if (!solanaAdminOwner) throw new Error("ADMIN_DISABLED");
+  const challenge = solanaChallenges.get(challengeId);
+  if (!challenge || challenge.expiresAt < Date.now()) throw new Error("CHALLENGE_INVALID");
+  solanaChallenges.delete(challengeId);
+  const normalizedSigner = new PublicKey(signer).toBase58();
+  if (normalizedSigner !== solanaAdminOwner) throw new Error("SIGNER_NOT_OWNER");
+  let signatureBytes: Uint8Array;
+  try { signatureBytes = bs58.decode(signature); } catch { throw new Error("SIGNATURE_INVALID"); }
+  const valid = nacl.sign.detached.verify(
+    new TextEncoder().encode(challenge.message),
+    signatureBytes,
+    new PublicKey(normalizedSigner).toBytes(),
+  );
+  if (!valid) throw new Error("SIGNATURE_INVALID");
+
+  const queueDir = resolve(controlDataRoot, "solana-requests");
+  await mkdir(queueDir, { recursive: true });
+  const requestId = `${Date.now()}-${randomBytes(8).toString("hex")}`;
+  await writeFile(resolve(queueDir, `${requestId}.json`), JSON.stringify({
+    id: requestId,
+    network: "solana-mainnet-beta",
+    action: challenge.action,
+    signer: normalizedSigner,
+    requestedAt: Date.now(),
+  }), { encoding: "utf8", flag: "wx", mode: 0o600 });
+  return { ok: true, requestId, action: challenge.action };
+}
+
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
     if (url.pathname === "/health") {
       return jsonResponse(response, 200, { ok: true, timestamp: Date.now() });
+    }
+
+    if (url.pathname === "/admin/api/solana/status" && request.method === "GET") {
+      try {
+        const body = JSON.parse(await readFile(resolve(controlDataRoot, "solana-status.json"), "utf8"));
+        return jsonResponse(response, 200, { ...body, network: "solana-mainnet-beta", owner: solanaAdminOwner });
+      } catch {
+        return jsonResponse(response, 200, {
+          network: "solana-mainnet-beta",
+          owner: solanaAdminOwner,
+          automationState: "stopped",
+          launch: { configured: false, armed: false, activated: false },
+          services: {},
+          balances: {},
+          updatedAt: 0,
+        });
+      }
+    }
+
+    if (url.pathname === "/admin/api/solana/challenge" && request.method === "POST") {
+      try {
+        const body = await readJsonBody(request);
+        if (typeof body.action !== "string" || Object.keys(body).some((key) => key !== "action")) {
+          return jsonResponse(response, 400, { error: "invalid_request" });
+        }
+        const challenge = solanaAdminChallenge(body.action);
+        return challenge
+          ? jsonResponse(response, 200, challenge)
+          : jsonResponse(response, 400, { error: solanaAdminOwner ? "action_not_allowed" : "admin_disabled" });
+      } catch {
+        return jsonResponse(response, 400, { error: "invalid_request" });
+      }
+    }
+
+    if (url.pathname === "/admin/api/solana/action" && request.method === "POST") {
+      try {
+        const body = await readJsonBody(request);
+        if (typeof body.challengeId !== "string" || typeof body.signer !== "string" || typeof body.signature !== "string"
+          || Object.keys(body).some((key) => !["challengeId", "signer", "signature"].includes(key))) {
+          return jsonResponse(response, 400, { error: "invalid_request" });
+        }
+        const queued = await queueSolanaAdminAction(body.challengeId, body.signer, body.signature);
+        return jsonResponse(response, 202, queued);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "ACTION_FAILED";
+        return jsonResponse(response, ["SIGNATURE_INVALID", "SIGNER_NOT_OWNER"].includes(code) ? 403 : 400, { error: code.toLowerCase() });
+      }
     }
 
     if (url.pathname === "/admin/api/status" && request.method === "GET") {
@@ -177,6 +383,19 @@ const server = createServer(async (request, response) => {
           owner: adminOwner,
           activated,
         });
+      }
+    }
+
+    if (url.pathname === "/admin/api/reserve-quote" && request.method === "GET") {
+      try {
+        const amountRaw = url.searchParams.get("amount");
+        if (amountRaw && !/^\d{1,78}$/.test(amountRaw)) {
+          return jsonResponse(response, 400, { ok: false, reason: "quote_amount_invalid" });
+        }
+        const quote = await verifiedReserveQuote(amountRaw ? BigInt(amountRaw) : undefined);
+        return jsonResponse(response, quote.ok ? 200 : 503, quote);
+      } catch {
+        return jsonResponse(response, 503, { ok: false, reason: "quote_verification_failed" });
       }
     }
 

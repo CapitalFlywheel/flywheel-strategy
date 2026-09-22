@@ -3,7 +3,7 @@ x-app: &app
     context: .
     args:
       VITE_REOWN_PROJECT_ID: ${VITE_REOWN_PROJECT_ID:-}
-  image: mstr-system:local
+  image: flywheel-strategy-solana:local
   restart: unless-stopped
   user: "1000:1000"
   security_opt:
@@ -22,11 +22,11 @@ services:
     command: npm run web:serve
     env_file:
       - .env.web
+      - .env.solana
     environment:
       PORT: 8787
       PUBLIC_DATA_ROOT: /app/data/public
       CONTROL_DATA_ROOT: /app/data/control
-      ADMIN_OWNER_ADDRESS: "0xfB8199AA97913c0494A600B725C634527dD47fa4"
     ports:
       - "127.0.0.1:8787:8787"
     healthcheck:
@@ -35,8 +35,22 @@ services:
       timeout: 5s
       retries: 3
 
+  solana-control-runner:
+    <<: *app
+    command: npm run solana:control-runner
+    env_file:
+      - .env.solana
+    environment:
+      PUBLIC_DATA_ROOT: /app/data/public
+      CONTROL_DATA_ROOT: /app/data/control
+      SOLANA_STATE_ROOT: /app/data/solana
+    volumes:
+      - ./data:/app/data
+      - ./.secrets/solana:/run/secrets/solana:ro
+
   reward-keeper:
     <<: *app
+    profiles: ["legacy"]
     command: npm run keeper:rewards
     env_file:
       - .env.server
@@ -44,6 +58,7 @@ services:
 
   reward-publisher:
     <<: *app
+    profiles: ["legacy"]
     command: npm run keeper:publisher
     env_file:
       - .env.server
@@ -54,6 +69,7 @@ services:
 
   governance-keeper:
     <<: *app
+    profiles: ["legacy"]
     command: npm run keeper:governance
     env_file:
       - .env.server
@@ -61,6 +77,7 @@ services:
 
   launch-watcher:
     <<: *app
+    profiles: ["legacy"]
     restart: unless-stopped
     command: npm run keeper:launch-watcher
     env_file:

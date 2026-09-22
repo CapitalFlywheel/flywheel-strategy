@@ -33,7 +33,7 @@ Official reference:
 
 - X avatar that remains recognizable at small mobile sizes.
 - X banner with a safe central composition after responsive cropping.
-- Matching site system for desktop and mobile holder, rewards, claim,
+- Matching site system for desktop and mobile holder rewards and automatic-airdrop status
   governance, history, and wallet connection flows.
 
 ## Selected direction

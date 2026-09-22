@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/final/x-banner-1500x500.png" alt="FLYWHEEL STRATEGY — Fees to MSTR to holders" width="100%">
+  <img src="assets/brand/final/x-banner-1500x500.png" alt="FLYWHEEL STRATEGY" width="100%">
 </p>
 
 <p align="center">
@@ -9,85 +9,89 @@
 <h1 align="center">FLYWHEEL STRATEGY</h1>
 
 <p align="center">
-  <strong>HOLD CAPITAL&nbsp;&nbsp;·&nbsp;&nbsp;ACCUMULATE MSTR</strong><br>
-  Trading fees continuously build MSTR rewards for passive holders and a separate holder-governed reserve<br>
+  <strong>HOLD CAPITAL&nbsp;&nbsp;·&nbsp;&nbsp;ACCUMULATE MSTRx</strong><br>
+  Real Pump.fun creator-fee receipts build automatic MSTRx rewards and a separate strategic reserve on Solana<br>
   <strong>CAPITAL IN MOTION</strong>
 </p>
 
 <p align="center">
   <a href="https://flywheelstrategy.xyz"><strong>WEBSITE</strong></a>
-  &nbsp;&nbsp;·&nbsp;&nbsp;
-  <a href="https://x.com/capital_strg"><strong>X / TWITTER</strong></a>
 </p>
 
 ---
 
-## THE FLYWHEEL
+## THE SOLANA FLYWHEEL
 
-| 01 — TRADE | 02 — ACCUMULATE | 03 — REWARD | 04 — DECIDE |
+| 01 — TRADE | 02 — COLLECT | 03 — ROUTE | 04 — DISTRIBUTE |
 |:--|:--|:--|:--|
-| PONS V2 trading generates fees | Automation converts the allocated fees into MSTR | Passive holders claim their share without staking | Holders vote on how the strategic reserve is used |
+| CAPITAL trades against the official MSTRx custom pair | Fixed 2% creator fees are collected from both Pump phases | Actual MSTRx receipts split exactly 60/40 | Funded rewards are sent automatically to eligible holders |
 
 ```text
-TRADING FEES  ──►  MSTR  ──►  HOLDER REWARDS
-                         └──►  STRATEGIC RESERVE
+PUMP.FUN 2% CREATOR FEE IN MSTRx
+             ├── 60% HOLDER REWARDS
+             └── 40% STRATEGIC RESERVE
 ```
 
 ## FEE FLOW
 
-PONS V2 trading uses a **3% total trade fee**
+CAPITAL uses Pump.fun's supported MSTRx custom pair with a fixed `creator_fee_bps` of `200`, equal to 2% of each trade in the quote asset
 
-- **1%** — PONS protocol fee
-- **2%** — creator fee routed into the FLYWHEEL STRATEGY system
+Every finalized creator-fee receipt controlled by the project is split exactly as follows
 
-The creator fee is divided automatically
-
-| Allocation | Share of creator fee | Purpose |
+| Allocation | Share of actual project receipts | Purpose |
 |:--|--:|:--|
-| Holder rewards | **50%** | MSTR claimable by eligible holders |
-| Strategic reserve | **40%** | MSTR controlled through holder governance |
-| Automation | **10%** | Onchain execution and operating gas |
+| Holder rewards | **60%** | MSTRx sent automatically to eligible holders |
+| Strategic reserve | **40%** | Isolated MSTRx governed through the restricted reserve system |
 
-## PASSIVE HOLDER REWARDS
+RPC, rent, priority fees and all other operating costs are funded separately and are never deducted from the 60/40 allocation
 
-Reward weight combines token balance with exact hold time measured by the hour
+## AUTOMATIC HOLDER REWARDS
 
-- Loyalty grows from the first hour and reaches its maximum after 30 days
-- Partial sales use newest-lot-first accounting
-- Rewards are available without staking or locking CAPITAL
-- Each holder claims MSTR directly and pays their own claim gas
-- Reward rounds adapt to market capitalization
+Reward weight combines CAPITAL balance with exact hold time
 
-| Market capitalization | Reward interval |
-|:--|--:|
-| Below $500K | 10 minutes |
-| $500K to $1M | 20 minutes |
-| $1M to $5M | 30 minutes |
-| $5M and above | 60 minutes |
+- No claim page, wallet connection, signature or holder-paid gas is required
+- The complete epoch is funded before the first payout batch
+- Partial sales consume newest lots first
+- Recipient batches are deterministic and idempotent
+- Every raw MSTRx unit must reconcile before an epoch can finalize
+- Two independent RPC providers must agree on finalized state before accounting advances
 
-## GOVERNANCE
+The reward asset is the official Solana MicroStrategy xStock token
 
-The team starts proposals and chooses the amount of reserve included in each vote
+- Symbol: `MSTRx`
+- Mint: `XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ`
+- Program: Token-2022
 
-- Every eligible holder can vote
-- Voting power follows the same balance-and-hold-time model used for rewards
-- Quorum is **7%** of eligible voting weight
-- Voting lasts from **1 to 12 hours**
-- The winning valid action is executed automatically after a **5-minute delay**
-- Proposal actions are limited to the fixed onchain allowlist
+## PUMP.FUN INTEGRATION
 
-Governance can direct the selected reserve amount toward an approved action such as token buyback, buyback and burn, buyback and lock, reserve locking or marketing funding
+The standard launch configuration is
 
-## TRANSPARENCY
+- Quote asset: official Solana MSTRx
+- Pair: CAPITAL / MSTRx
+- Creator fee: fixed 2%
+- Pump native holder rewards: disabled
+- Project creator fees: collected from both the bonding curve and PumpSwap creator vault
+- Token creation and first buy: one wallet-approved Pump.fun transaction when supported by the final launch interface
 
-This repository publishes the contracts, reward calculations, governance rules, automation services, public website and tests
+The CAPITAL mint does not exist until the real Pump.fun launch. No production deployer is used for rehearsals
 
-Final mainnet contract addresses and transaction links will be published after the branded launch
+## GOVERNANCE AND CUSTODY
 
-- [System architecture](docs/architecture.md)
-- [Public technical specification](apps/web/public/technical-specification.md)
-- [Operations overview](docs/operations.md)
-- [Security policy](SECURITY.md)
+Holder reward inventory, strategic reserve inventory, operating SOL and marketing funds remain separate
+
+Governance can execute only published reserve actions through a restricted Solana program. Public governance claims remain disabled until the program has been audited and deployed
+
+The owner panel exposes separate signed actions for launch verification, launch detection, both fee routes, routing pause, epoch preparation, automatic distribution, finalization and recovery of uncommitted balances. One pre-launch arm signature is enough for the detector to verify, publish and activate the exact Pump mint
+
+Committed holder rewards cannot be recovered by the owner
+
+## CURRENT STATUS
+
+The repository contains the Solana public site, wallet layer, fixed 2% custom-pair validation, one-signature launch detector, exact 60/40 allocation, both Pump fee collection paths, Token-2022 transfer-hook support, crash-safe automatic payout batches, RPC-consensus guards and private control surface
+
+The old Robinhood Chain implementation is retained only as legacy audit history. Its addresses, manifests, cached epochs and bot state are not valid Solana production configuration
+
+No mainnet CAPITAL mint, strategy program or governance program is published yet
 
 ## VERIFY LOCALLY
 
@@ -96,48 +100,40 @@ Requirements: Node.js 20+ and npm
 ```bash
 npm ci
 npm run security:secrets
-npm run test:all
+npm run test:solana
+npm run test:web
 npm run web:build
 ```
 
-Start the local website
+Start the local site
 
 ```bash
 npm run web:dev
 ```
 
-Then open `http://127.0.0.1:5173`
-
 ## REPOSITORY MAP
 
 | Path | Purpose |
 |:--|:--|
-| `contracts/` | Solidity contracts and approved execution adapters |
-| `services/indexer/` | Hold-time accounting and reward calculations |
-| `services/keeper/` | Launch, reward and governance automation |
-| `services/api/` | Production web server and public status data |
-| `apps/web/` | Holder website, documentation and governance |
-| `test/` | Contract and system tests |
-| `config/` | Public chain, protocol and route configuration |
+| `services/solana/` | Fixed 2% launch validation, finalized RPC consensus, Pump MSTRx collection, 60/40 routing and automatic transfer accounting |
+| `services/indexer/` | Deterministic hold-time and reward accounting primitives being ported to Solana history |
+| `services/api/` | Public site server and wallet-signed private control queue |
+| `apps/web/` | Solana holder website, documentation, governance preview and owner panel |
+| `config/solana-mainnet.json` | Public Solana programs, assets and approved economics |
+| `contracts/`, `services/keeper/` | Legacy Robinhood implementation retained for audit history, not Solana deployment |
 
 ## SECURITY
 
 Secrets are not stored in this repository
 
-Private keys, seed phrases, RPC credentials, server passwords, SSH private keys, hidden administration URLs and live bot state must remain outside Git
+Private keys, seed phrases, RPC credentials, server passwords, SSH keys, hidden administration URLs and live operational state must remain outside Git
 
-`npm run security:secrets` checks publishable files locally and the same check runs on every GitHub push and pull request
-
-## CURRENT STATUS
-
-The included contract, indexer and wallet tests pass and the system has been exercised with a small mainnet test deployment
-
-The branded production deployment has not happened yet and the contracts have not completed an independent external audit
+`npm run security:secrets` scans every publishable file before a public push
 
 ---
 
 <p align="center">
   <img src="assets/brand/final/x-avatar-400.png" alt="FLYWHEEL STRATEGY mark" width="56"><br>
   <strong>CAPITAL IN MOTION</strong><br>
-  FEES&nbsp;&nbsp;→&nbsp;&nbsp;MSTR&nbsp;&nbsp;→&nbsp;&nbsp;HOLDERS
+  FEES&nbsp;&nbsp;→&nbsp;&nbsp;MSTRx&nbsp;&nbsp;→&nbsp;&nbsp;HOLDERS
 </p>

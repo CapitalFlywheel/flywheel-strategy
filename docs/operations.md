@@ -1,75 +1,89 @@
-# Operations runbook
+# Solana operations
 
-## Separation of keys
+## Services
 
-Use three independent accounts:
+The current production stack uses one constrained Solana control runner with separately reported service roles
 
-1. Deployment/final admin: deploys, wires roles and is not stored on the automation server.
-2. Automation: collects/splits fees, buys MSTR and executes due governance actions.
-3. Root publisher: publishes deterministic reward roots and has no reserve permission.
+- `solana-fee-keeper` verifies and sweeps both Pump creator-fee sources and routes the received MSTRx 60/40
+- `solana-reward-publisher` builds finalized holder state and commits a fully funded reward epoch
+- `solana-distributor` sends idempotent MSTRx batches and finalizes exact conservation
+- `solana-launch-detector` binds and activates the one exact Pump launch created after the signed arm timestamp
+- `solana-governance-keeper` remains disabled until a restricted governance program is reviewed and deployed
 
-Never commit `.env`. Production should inject secrets through the host's secret manager. The supplied Compose setup accepts separate optional files: `.env.web`, `.env.reward-keeper`, `.env.reward-publisher` and `.env.governance-keeper`. Put only the variables required by that service in each file. This prevents the public web process from receiving private keys.
+No service stores the owner private key. The isolated creator, operator, holder-settlement and reserve service keys are installed outside Git with file-level access restrictions
 
-Independent standby automation instances may use separate keys to avoid nonce collisions. Governance execution itself remains fixed by the contract result and is safe to retry after a failed transaction.
+## Required secret environment
 
-## Production data
+Production values stay outside Git
 
-Use Alchemy or another archive-capable Robinhood Chain RPC for Transfer history. Public RPC is a development fallback only. The indexer reads Alchemy's Transfers API, stores processed events under `/app/data` and refreshes only a small recent overlap. It no longer scans every block from launch on every reward epoch. Persist `/app/data` and back it up after every published epoch. Public reward snapshots and proposal snapshots live under `/app/data/public` and are served by the same web process.
+```text
+SOLANA_RPC_PRIMARY_URL=
+SOLANA_RPC_FALLBACK_URL=
+SOLANA_ADMIN_OWNER=
+SOLANA_CREATOR_PUBLIC_KEY=
+SOLANA_CREATOR_KEYPAIR_PATH=
+SOLANA_OPERATOR_KEYPAIR_PATH=
+SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY=
+SOLANA_HOLDER_SETTLEMENT_KEYPAIR_PATH=
+SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY=
+SOLANA_RESERVE_SETTLEMENT_KEYPAIR_PATH=
+SOLANA_HOLDER_JOURNAL_PATH=
+SOLANA_RECOVERY_PUBLIC_KEY=
+ADMIN_PANEL_PATH=
+```
 
-Run `npm run setup:rpc` on the deployment machine. It checks chain ID `4663` and writes the primary/optional backup endpoints to ignored `.env` files. Never place an Alchemy key in frontend variables or committed files. Add an Alchemy IP allowlist only after the production server has a stable public IP.
+Keypair files must be readable only by their dedicated service account. The public website receives only public addresses and sanitized status files
 
-## Start order
+## Funding
 
-1. Build and test the exact source revision.
-2. Run `verify:live` and save its output.
-3. Deploy the pre-launch contracts.
-4. Generate and independently decode the unsigned PONS launch transaction.
-5. Sign the PONS launch from the owner wallet.
-6. Record token address, curve address, launch block and launch timestamp.
-7. Deploy and wire the post-launch governance contracts.
-8. Publish all addresses and verified sources.
-9. Start web/API, reward keeper, reward publisher and governance keeper. Add an independently keyed standby instance only after the primary is healthy.
-10. Confirm health, first fee collection, first MSTR purchase, first reward root and a small claim before announcement.
+The 60/40 split applies to every actual creator-fee receipt
 
-## Testnet rehearsal
+Operating SOL for RPC-related transactions, associated-token-account rent, priority fees and keeper execution is funded separately. Automation expenses do not reduce either holder or reserve allocation
 
-Run `npm run deploy:testnet` on Robinhood Chain testnet (`46630`) only after supplying a funded testnet deployment key. The rehearsal deploys the real project control, vault, reward and governance contracts, but uses mock PONS escrow, MSTR and exchange behavior. It validates deployment and permissions without pretending that mainnet liquidity exists on testnet.
+## Start conditions
 
-Use `npm run test:fork` for the separate route test against a local copy of current mainnet state. No real transaction is broadcast by the fork test.
+Automation must remain stopped until all checks pass
 
-## Public health
+1. Two independent production RPC providers agree on finalized blocks
+2. The owner, creator and operational public keys match the signed launch manifest
+3. The Pump coin uses the official MSTRx quote, `creator_fee_bps: 200` and `holderReward: false`
+4. Both creator-fee collection paths simulate to the configured creator MSTRx account
+5. The MSTRx mint, Token-2022 program and transfer-hook extensions match public configuration
+6. Extension-aware MSTRx transfers simulate to the isolated reward and reserve accounts
+7. Reward and reserve custody are isolated
+8. Recovery tests prove that committed holder inventory cannot be swept
+9. Public documentation matches deployed behavior
+10. Secret scan, tests and web build pass
 
-Every keeper writes its latest result under `data/public/status/`. The web server exposes those JSON files without caching, and the interface marks a service stale after two minutes. Monitor the machine directly as well: a public heartbeat proves recent process activity, not that every external dependency is economically healthy.
+## Runtime rules
 
-## Monitoring alerts
+- Read accounting state at `finalized`
+- Stop on RPC slot, block, balance or history disagreement
+- Never infer a receipt from expected trading volume
+- Route only exact reconciled MSTRx creator-fee receipts
+- Never sweep unrelated MSTRx already held by the creator wallet
+- Preserve every raw MSTRx unit across the 60/40 split
+- Fund a complete epoch before its first payout
+- Persist signature and batch state before advancing
+- Retry expired transactions with the same logical batch identifier
+- Keep the public site online while automation is paused
 
-Alert immediately when:
+## Incident response
 
-- a process has not reported health for two minutes;
-- PONS fees remain uncollected for five minutes;
-- an MSTR conversion fails three times;
-- a reward epoch is late by more than one current interval;
-- publisher state differs from the on-chain epoch/root;
-- the archive RPC omits or rejects historical logs;
-- the Alchemy Transfers API returns incomplete raw transfer data;
-- a governance proposal is not executed within two minutes after its five-minute delay;
-- MSTR `uiMultiplier()` or canonical address differs from the recorded configuration;
-- any admin, publisher or automation role changes.
+The private panel provides separate controls to pause routing, sweep either fee source, inspect balances, resume routing and recover only uncommitted project-controlled MSTRx
 
-## Recovery rules
+If a provider, mint, creator, transfer hook or balance disagrees, the correct response is to stop and preserve state. The system must not silently switch assets or reinterpret a failed transaction as a receipt
 
-- Never edit a published snapshot.
-- If a transaction published a root but the local process stopped before saving state, restart with the prepared epoch file intact; the publisher verifies and recovers it.
-- If a quote/swap fails, do not loosen the 20% limit. Wait for the next cycle or use the already allowlisted fallback route.
-- If the publisher and chain disagree without a matching prepared snapshot, stop publication and investigate. Do not guess state.
-- A failed governance swap leaves the whole execution transaction reverted, so the automatic executor retries the same winning option and parameters.
-- The launch watcher persists its next unread block. After a process or host restart it resumes from that cursor and never advances the cursor after an RPC error.
-- If a launch was already detected, the watcher resumes PONS migration tracking from `data/control/main-launch/detected.json`.
-- The panel stores a pending transaction hash before waiting for confirmation. On reload it waits for that same hash rather than sending a duplicate transaction.
-- Export the launch-progress JSON after each main phase. Use one dedicated browser profile on launch day and import this file before changing workstations.
+## Deployment verification
 
-## Backups
+Run before every release
 
-Back up the reward state, every epoch JSON, governance snapshots, deployment JSON, live verification output and transaction hashes. These contain no private keys and should be publicly mirrored after launch.
+```bash
+npm ci
+npm run security:secrets
+npm run test:solana
+npm run test:web
+npm run web:build
+```
 
-The host backup script and control runner must remain executable. Verify both after every Windows-to-Linux deployment because losing the executable bit or converting shell scripts to CRLF prevents systemd from starting them.
+An external Solana program review, off-server backups and redundant production infrastructure remain required before mainnet activation
