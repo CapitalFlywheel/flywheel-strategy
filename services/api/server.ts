@@ -318,6 +318,10 @@ const server = createServer(async (request, response) => {
       return jsonResponse(response, 200, { ok: true, timestamp: Date.now() });
     }
 
+    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
+      throw new Error("NOT_FOUND");
+    }
+
     if (solanaAdminApiRoot && url.pathname === `${solanaAdminApiRoot}/status` && request.method === "GET") {
       try {
         const body = JSON.parse(await readFile(resolve(controlDataRoot, "solana-status.json"), "utf8"));
@@ -460,10 +464,6 @@ const server = createServer(async (request, response) => {
         const code = error instanceof Error ? error.message : "action_failed";
         return jsonResponse(response, code === "SIGNATURE_INVALID" ? 403 : 400, { error: code.toLowerCase() });
       }
-    }
-
-    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
-      throw new Error("NOT_FOUND");
     }
 
     if (adminPanelPath && url.pathname.replace(/\/$/, "") === adminPanelPath && request.method === "GET") {
