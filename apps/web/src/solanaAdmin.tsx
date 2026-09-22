@@ -55,12 +55,14 @@ export function SolanaAdminPanel() {
   const [status, setStatus] = useState<SolanaAdminStatus>();
   const [busy, setBusy] = useState<string>();
   const [notice, setNotice] = useState("Connect the configured owner wallet to authorize an action");
+  const apiRoot = window.__FLYWHEEL_ADMIN_API__;
 
   const refresh = useCallback(async () => {
-    const response = await fetch("/admin/api/solana/status", { cache: "no-store" });
+    if (!apiRoot) throw new Error("ADMIN_API_UNAVAILABLE");
+    const response = await fetch(`${apiRoot}/solana/status`, { cache: "no-store" });
     if (!response.ok) throw new Error("STATUS_UNAVAILABLE");
     setStatus(await response.json() as SolanaAdminStatus);
-  }, []);
+  }, [apiRoot]);
 
   useEffect(() => { void refresh().catch(() => setNotice("Solana control API is not configured on this environment")); }, [refresh]);
 
@@ -73,13 +75,14 @@ export function SolanaAdminPanel() {
     setBusy(action);
     setNotice("Preparing exact action challenge");
     try {
-      const challengeResponse = await fetch("/admin/api/solana/challenge", {
+      if (!apiRoot) throw new Error("ADMIN_API_UNAVAILABLE");
+      const challengeResponse = await fetch(`${apiRoot}/solana/challenge`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
       });
       const challenge = await challengeResponse.json() as Challenge & { error?: string };
       if (!challengeResponse.ok) throw new Error(challenge.error || "CHALLENGE_FAILED");
       const signed = await wallet.signMessage(new TextEncoder().encode(challenge.message));
-      const response = await fetch("/admin/api/solana/action", {
+      const response = await fetch(`${apiRoot}/solana/action`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ challengeId: challenge.id, signer: wallet.publicKey.toBase58(), signature: bs58.encode(signed) }),

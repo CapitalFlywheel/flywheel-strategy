@@ -4,7 +4,7 @@
 
 The private panel is served only at the unlisted path configured through `ADMIN_PANEL_PATH`
 
-The public `/admin` path returns 404. The unlisted path is not a substitute for wallet authentication
+The public `/admin` path and the old `/admin/api/solana` surface return 404. The Solana control API is mounted beneath the same unlisted panel path. The unlisted path is not a substitute for wallet authentication
 
 ## Authorization
 

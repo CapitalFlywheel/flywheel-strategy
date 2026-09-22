@@ -56,6 +56,7 @@ const adminPanelPath = (() => {
   }
   return value;
 })();
+const solanaAdminApiRoot = adminPanelPath ? `${adminPanelPath}/api/solana` : undefined;
 const allowedAdminActions = new Set([
   "start_automation", "stop_automation", "register_prelaunch", "arm_launch_detection",
   "cancel_launch_detection", "activate_postlaunch", "prepare_governance",
@@ -317,7 +318,7 @@ const server = createServer(async (request, response) => {
       return jsonResponse(response, 200, { ok: true, timestamp: Date.now() });
     }
 
-    if (url.pathname === "/admin/api/solana/status" && request.method === "GET") {
+    if (solanaAdminApiRoot && url.pathname === `${solanaAdminApiRoot}/status` && request.method === "GET") {
       try {
         const body = JSON.parse(await readFile(resolve(controlDataRoot, "solana-status.json"), "utf8"));
         return jsonResponse(response, 200, { ...body, network: "solana-mainnet-beta", owner: solanaAdminOwner });
@@ -334,7 +335,7 @@ const server = createServer(async (request, response) => {
       }
     }
 
-    if (url.pathname === "/admin/api/solana/challenge" && request.method === "POST") {
+    if (solanaAdminApiRoot && url.pathname === `${solanaAdminApiRoot}/challenge` && request.method === "POST") {
       try {
         const body = await readJsonBody(request);
         if (typeof body.action !== "string" || Object.keys(body).some((key) => key !== "action")) {
@@ -349,7 +350,7 @@ const server = createServer(async (request, response) => {
       }
     }
 
-    if (url.pathname === "/admin/api/solana/action" && request.method === "POST") {
+    if (solanaAdminApiRoot && url.pathname === `${solanaAdminApiRoot}/action` && request.method === "POST") {
       try {
         const body = await readJsonBody(request);
         if (typeof body.challengeId !== "string" || typeof body.signer !== "string" || typeof body.signature !== "string"
@@ -461,13 +462,14 @@ const server = createServer(async (request, response) => {
       }
     }
 
-    if (url.pathname === "/admin" || url.pathname === "/admin/") {
+    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
       throw new Error("NOT_FOUND");
     }
 
     if (adminPanelPath && url.pathname.replace(/\/$/, "") === adminPanelPath && request.method === "GET") {
       const template = await readFile(resolve(staticRoot, "index.html"), "utf8");
-      const body = template.replace("</head>", "<script>window.__FLYWHEEL_ADMIN__=true</script></head>");
+      const apiRoot = JSON.stringify(`${adminPanelPath}/api`);
+      const body = template.replace("</head>", `<script>window.__FLYWHEEL_ADMIN__=true;window.__FLYWHEEL_ADMIN_API__=${apiRoot}</script></head>`);
       response.writeHead(200, {
         "content-type": mimeTypes[".html"],
         "cache-control": "no-store",

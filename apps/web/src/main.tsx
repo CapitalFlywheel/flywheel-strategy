@@ -10,7 +10,7 @@ import { solanaMainnet, solscanAccount, solscanToken, solscanTransaction } from 
 import { isSolanaPublicKey, shortPublicKey } from "./wallets";
 
 declare global {
-  interface Window { __FLYWHEEL_ADMIN__?: boolean }
+  interface Window { __FLYWHEEL_ADMIN__?: boolean; __FLYWHEEL_ADMIN_API__?: string }
 }
 
 interface PublicLinks { x?: string; github?: string }
