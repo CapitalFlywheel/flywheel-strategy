@@ -2,7 +2,7 @@ FROM node:22-alpine
 WORKDIR /app
 ARG VITE_REOWN_PROJECT_ID=""
 ENV VITE_REOWN_PROJECT_ID=$VITE_REOWN_PROJECT_ID
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 COPY hardhat.config.js ./
 COPY contracts ./contracts
