@@ -16,7 +16,7 @@ In the approved single-wallet configuration, the owner, Pump creator and recover
 
 ## Launch actions
 
-- Verify pre-launch wallet roles, RPC consensus and MSTRx asset properties
+- Verify pre-launch wallet roles, RPC consensus, MSTRx asset properties and Bitquery transfer-history availability
 - Arm detection for one coin created by the approved creator
 - Disarm detection without changing balances
 - Automatic activation of only the independently verified detected mint

@@ -48,11 +48,8 @@ export class BitqueryTransferSource implements MintTransferSource {
     return response;
   }
 
-  async discover(mint: string, fromTime: number, throughTime: number): Promise<DiscoveredTransferTransaction[]> {
-    new PublicKey(mint);
+  async probeCoverage(fromTime: number, throughTime: number): Promise<{ oldest: number; newest: number }> {
     if (!Number.isInteger(fromTime) || !Number.isInteger(throughTime) || throughTime <= fromTime) throw new Error("TRANSFER_WINDOW_INVALID");
-    const rows: DiscoveredTransferTransaction[] = [];
-    const pageSize = 500;
     // Bitquery's realtime Transfers cube has a short rolling retention window
     // and its offset pagination is not stable when many transfers share a slot
     if (throughTime - fromTime > 6 * 3_600) throw new Error("TRANSFER_SOURCE_REALTIME_GAP");
@@ -76,6 +73,14 @@ export class BitqueryTransferSource implements MintTransferSource {
     }
     if (oldest > fromTime) throw new Error("TRANSFER_SOURCE_HISTORY_UNAVAILABLE");
     if (newest < throughTime - 1) throw new Error("TRANSFER_SOURCE_TAIL_UNAVAILABLE");
+    return { oldest, newest };
+  }
+
+  async discover(mint: string, fromTime: number, throughTime: number): Promise<DiscoveredTransferTransaction[]> {
+    new PublicKey(mint);
+    const rows: DiscoveredTransferTransaction[] = [];
+    const pageSize = 500;
+    await this.probeCoverage(fromTime, throughTime);
     const windows: Array<[number, number]> = [[fromTime, throughTime]];
     let queries = 0;
     while (windows.length) {

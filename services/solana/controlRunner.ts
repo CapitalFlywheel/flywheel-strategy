@@ -16,6 +16,7 @@ import { assertSolanaWalletRoles, sharedAdminCreatorEnabled } from "./walletRole
 import { readCustomQuoteCreatorFeeBalances } from "./pumpFees";
 import { verifySignedSolanaControlAction, type SignedSolanaControlAction } from "./controlAuth";
 import { writeControlRequestOutcome } from "./controlRequestStatus";
+import { probeBitqueryLaunchReadiness } from "./bitqueryReadiness";
 
 interface ControlRequest extends SignedSolanaControlAction { id: string; requestedAt: number }
 interface ControlStatus {
@@ -233,6 +234,7 @@ async function verifyPrelaunch(status: ControlStatus) {
       throw new Error("CREATOR_MSTRX_FEE_VAULT_NOT_EMPTY");
     }
   }
+  await probeBitqueryLaunchReadiness();
   status.launch.configured = true;
   status.services["solana-control-runner"] = { ok: true, updatedAt: Date.now(), detail: `MSTRx custom-pair ready at finalized slot ${consensus.slot}` };
 }
@@ -430,7 +432,12 @@ async function dispatch(request: ControlRequest, status: ControlStatus) {
   await consumeControlNonce(request);
   switch (request.action) {
     case "verify_launch_config": await verifyPrelaunch(status); break;
-    case "arm_launch_detection": if (!status.launch.configured) throw new Error("LAUNCH_NOT_CONFIGURED"); status.launch.armed = true; status.launch.armedAt = Date.now(); break;
+    case "arm_launch_detection":
+      if (!status.launch.configured) throw new Error("LAUNCH_NOT_CONFIGURED");
+      await probeBitqueryLaunchReadiness();
+      status.launch.armed = true;
+      status.launch.armedAt = Date.now();
+      break;
     case "disarm_launch_detection": status.launch.armed = false; status.launch.armedAt = undefined; break;
     case "activate_postlaunch": {
       if (!status.launch.armed || !status.launch.armedAt) throw new Error("DETECTOR_NOT_ARMED");

@@ -44,7 +44,7 @@ const actionGroups = [
   {
     title: "Launch control",
     actions: [
-      ["verify_launch_config", "Verify pre-launch configuration", "Checks wallet roles, official MSTRx mint extensions and RPC consensus · Actual Pump settings are checked after token creation"],
+      ["verify_launch_config", "Verify pre-launch configuration", "Checks wallet roles, MSTRx, both RPCs and Bitquery history coverage · Actual Pump settings are checked after token creation"],
       ["arm_launch_detection", "Arm automatic Pump.fun launch", "One pre-launch signature watches the approved creator, verifies one exact mint and activates it automatically"],
       ["disarm_launch_detection", "Disarm detection", "Stops launch discovery without changing any balances"],
       ["activate_postlaunch", "Retry verified activation", "Re-runs the same two-RPC Pump create-event detection and validation if automatic activation was interrupted"],

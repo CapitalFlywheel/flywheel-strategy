@@ -46,6 +46,8 @@ Before deploying the narrowed Compose mounts, provision `data/public`, `data/con
 
 The current mint-wide transfer discovery adapter uses Bitquery V2 `Solana(dataset: realtime)`. For long-running operation, configure a Bitquery Application's `BITQUERY_CLIENT_ID` and `BITQUERY_CLIENT_SECRET` so the indexer obtains and refreshes its bearer token before expiry. A protected `BITQUERY_API_KEY` static bearer token is accepted only when both client credentials are unset. Incomplete client credentials or a failed OAuth refresh stop the scan; they do not silently fall back to the static token. Never put credentials in Git, browser configuration or logs. The adapter checks the transfer cube's actual oldest and newest timestamps before each scan, re-reads an overlapping hour, verifies newly discovered signatures against both RPCs, and fails if a previously indexed transfer disappears. If the creation transaction is absent from the Transfers cube, it is seeded only from a finalized transaction and agreed block-signature order. Bitquery's realtime transfer history has short retention; a gap longer than six hours, a missing source tail or an unavailable historical floor stops distribution and requires a verified historical backfill. Epoch preparation also requires a healthy recent indexer heartbeat, a fresh finalized journal and a strictly advancing epoch/window. Do not restart from an incomplete index, use `getSignaturesForAddress(mint)` as a substitute, or infer a reward epoch from a current holder snapshot
 
+`verify_launch_config` and `arm_launch_detection` each perform a read-only Bitquery authentication and realtime coverage probe for the window from one hour ago through five minutes ago. A failed probe prevents arming. This global probe confirms source availability only; after launch, mint-specific transfer verification and complete holder-history checks still gate each reward epoch
+
 ## Funding
 
 The 60/40 split applies to every actual creator-fee receipt
@@ -70,6 +72,7 @@ Automation must remain stopped until all checks pass
 11. Mint-wide transfer discovery covers the creation transaction and all transfers through the finalized checkpoint, with no retention gap
 12. The reserve and recovery addresses are controlled by the project; no reserve private key is installed on the server
 13. The creator's MSTRx fee vault is clean and this creator has no other MSTRx-paired Pump token: the fee vault is scoped by creator and quote asset, not by CAPITAL mint
+14. Bitquery authentication and global realtime transfer coverage pass the prelaunch probe; this does not replace the mint-specific holder-history check after launch
 
 ## Runtime rules
 
