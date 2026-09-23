@@ -1,5 +1,17 @@
 # Solana production handoff
 
+## Readiness snapshot · 23 September 2026
+
+- Repository branch `solana-mstrx` contains the Solana web UI, private signed-action panel, two-RPC launch validation, durable fee settlement, mint-wide holder journal, and restart-aware direct MSTRx payout code
+- Local TypeScript, Solana tests, web tests, web build and publishable-file secret scan pass
+- The public domain responds, but this repository revision has not been installed on the VPS; the existing deploy SSH key is currently rejected by the server
+- No Solana production wallet roles, authenticated RPC URLs, Bitquery credential, new X link, or CAPITAL mint have been configured
+- No mainnet fee sweep, 60/40 transfer, holder payout, or PumpSwap migration has been verified end to end
+- Solana reserve governance is not implemented or audited; the public voting interface is inactive
+- The current upstream dependency audit reports 8 high and 4 moderate production advisories and no critical advisory. The suggested automated major downgrades are incompatible with the required Pump V2 path, so independent review or an upstream fix is still required
+
+Do not describe the code as live automation or a completed mainnet launch from local test results
+
 ## Current boundary
 
 The repository is prepared for a Solana launch but is not authorized for mainnet activation
