@@ -22,7 +22,7 @@ The CAPITAL mint, project Solana wallets, production RPC endpoints and new X acc
 
 - Solana owner public key
 - Pump creator public key if different from the owner
-- Separately funded operator, holder-settlement and reserve public keys
+- Separately funded operator, holder-settlement, reserve and recovery public keys
 - A mint-wide finalized transfer-history provider and its protected server credential; the current adapter requires Bitquery access with sufficient realtime throughput and a historical backfill procedure
 - Marketing public key if the governance module uses one
 - Primary and independent fallback Solana RPC endpoints
