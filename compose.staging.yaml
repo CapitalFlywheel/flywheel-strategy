@@ -1,0 +1,15 @@
+# Use with: docker compose -p mstr-system-staging -f compose.yaml -f compose.staging.yaml up -d web
+# Isolated checkout and ./data directory are required. Never run this override in /opt/mstr-system.
+services:
+  web:
+    image: flywheel-strategy-solana:staging
+    ports: !override
+      - "127.0.0.1:8788:8787"
+
+  solana-control-runner:
+    image: flywheel-strategy-solana:staging
+    profiles: ["staging-automation"]
+
+  solana-holder-indexer:
+    image: flywheel-strategy-solana:staging
+    profiles: ["staging-automation"]
