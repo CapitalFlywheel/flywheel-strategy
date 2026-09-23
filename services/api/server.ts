@@ -25,8 +25,12 @@ import {
 } from "../admin/launchManifest";
 import { normalizeGovernanceDraft } from "../admin/governanceDraft";
 import { PublicKey } from "@solana/web3.js";
-import bs58 from "bs58";
-import nacl from "tweetnacl";
+import {
+  SOLANA_CONTROL_ACTIONS, SOLANA_CONTROL_CHALLENGE_MS, SOLANA_CONTROL_NETWORK,
+  solanaControlMessage, verifySignedSolanaControlAction,
+} from "../solana/controlAuth";
+import { readControlRequestOutcome } from "../solana/controlRequestStatus";
+import { blockLegacyAdminPath, solanaAdminMode } from "./adminRoutePolicy";
 
 const port = Number(process.env.PORT || "8787");
 const staticRoot = resolve(process.env.WEB_STATIC_ROOT || "dist/web");
@@ -66,14 +70,9 @@ const solanaAdminOwner = (() => {
   if (!value) return undefined;
   return new PublicKey(value).toBase58();
 })();
-const allowedSolanaActions = new Set([
-  "verify_launch_config", "arm_launch_detection", "disarm_launch_detection", "activate_postlaunch",
-  "sweep_curve_fees", "sweep_pumpswap_fees", "pause_conversions", "resume_conversions",
-  "recover_uncommitted", "reconcile_fee_receipts",
-  "prepare_reward_epoch", "distribute_reward_epoch", "finalize_reward_epoch",
-]);
+const isSolanaAdminMode = solanaAdminMode(process.env.SOLANA_CLUSTER, solanaAdminOwner);
 const challenges = new Map<string, { action: string; message: string; expiresAt: number; payload?: unknown }>();
-const solanaChallenges = new Map<string, { action: string; message: string; expiresAt: number }>();
+const solanaChallenges = new Map<string, { action: string; message: string; issuedAt: number; expiresAt: number; nonce: string }>();
 const mimeTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -263,22 +262,13 @@ async function queueAdminAction(challengeId: string, signature: Hex) {
 }
 
 function solanaAdminChallenge(action: string) {
-  if (!solanaAdminOwner || !allowedSolanaActions.has(action)) return;
+  if (!solanaAdminOwner || !SOLANA_CONTROL_ACTIONS.has(action)) return;
   cleanChallenges();
   const id = randomBytes(20).toString("hex");
   const issuedAt = Date.now();
-  const expiresAt = issuedAt + 5 * 60_000;
-  const message = [
-    "FLYWHEEL STRATEGY SOLANA CONTROL",
-    `Action: ${action}`,
-    `Owner: ${solanaAdminOwner}`,
-    "Network: Solana Mainnet Beta",
-    "Allocation: 60% holders / 40% strategic reserve",
-    `Issued: ${new Date(issuedAt).toISOString()}`,
-    `Expires: ${new Date(expiresAt).toISOString()}`,
-    `Nonce: ${id}`,
-  ].join("\n");
-  solanaChallenges.set(id, { action, message, expiresAt });
+  const expiresAt = issuedAt + SOLANA_CONTROL_CHALLENGE_MS;
+  const message = solanaControlMessage({ network: SOLANA_CONTROL_NETWORK, action, signer: solanaAdminOwner, issuedAt, expiresAt, nonce: id });
+  solanaChallenges.set(id, { action, message, issuedAt, expiresAt, nonce: id });
   return { id, action, message, expiresAt, owner: solanaAdminOwner };
 }
 
@@ -288,24 +278,23 @@ async function queueSolanaAdminAction(challengeId: string, signer: string, signa
   if (!challenge || challenge.expiresAt < Date.now()) throw new Error("CHALLENGE_INVALID");
   solanaChallenges.delete(challengeId);
   const normalizedSigner = new PublicKey(signer).toBase58();
-  if (normalizedSigner !== solanaAdminOwner) throw new Error("SIGNER_NOT_OWNER");
-  let signatureBytes: Uint8Array;
-  try { signatureBytes = bs58.decode(signature); } catch { throw new Error("SIGNATURE_INVALID"); }
-  const valid = nacl.sign.detached.verify(
-    new TextEncoder().encode(challenge.message),
-    signatureBytes,
-    new PublicKey(normalizedSigner).toBytes(),
-  );
-  if (!valid) throw new Error("SIGNATURE_INVALID");
+  const authorization = {
+    network: SOLANA_CONTROL_NETWORK,
+    action: challenge.action,
+    signer: normalizedSigner,
+    issuedAt: challenge.issuedAt,
+    expiresAt: challenge.expiresAt,
+    nonce: challenge.nonce,
+    signature,
+  };
+  verifySignedSolanaControlAction(authorization, solanaAdminOwner);
 
   const queueDir = resolve(controlDataRoot, "solana-requests");
   await mkdir(queueDir, { recursive: true });
   const requestId = `${Date.now()}-${randomBytes(8).toString("hex")}`;
   await writeFile(resolve(queueDir, `${requestId}.json`), JSON.stringify({
     id: requestId,
-    network: "solana-mainnet-beta",
-    action: challenge.action,
-    signer: normalizedSigner,
+    ...authorization,
     requestedAt: Date.now(),
   }), { encoding: "utf8", flag: "wx", mode: 0o600 });
   return { ok: true, requestId, action: challenge.action };
@@ -318,13 +307,13 @@ const server = createServer(async (request, response) => {
       return jsonResponse(response, 200, { ok: true, timestamp: Date.now() });
     }
 
-    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
+    if (blockLegacyAdminPath(url.pathname, isSolanaAdminMode)) {
       throw new Error("NOT_FOUND");
     }
 
     if (solanaAdminApiRoot && url.pathname === `${solanaAdminApiRoot}/status` && request.method === "GET") {
       try {
-        const body = JSON.parse(await readFile(resolve(controlDataRoot, "solana-status.json"), "utf8"));
+        const body = JSON.parse(await readFile(resolve(controlDataRoot, "solana-status-visible", "solana-status.json"), "utf8"));
         return jsonResponse(response, 200, { ...body, network: "solana-mainnet-beta", owner: solanaAdminOwner });
       } catch {
         return jsonResponse(response, 200, {
@@ -336,6 +325,17 @@ const server = createServer(async (request, response) => {
           balances: {},
           updatedAt: 0,
         });
+      }
+    }
+
+    if (solanaAdminApiRoot && request.method === "GET" && url.pathname.startsWith(`${solanaAdminApiRoot}/request/`)) {
+      const requestId = url.pathname.slice(`${solanaAdminApiRoot}/request/`.length);
+      try {
+        const state = await readControlRequestOutcome(controlDataRoot, requestId);
+        return state ? jsonResponse(response, 200, { requestId, state }) : jsonResponse(response, 404, { error: "request_not_found" });
+      } catch (error) {
+        if (error instanceof Error && error.message === "REQUEST_ID_INVALID") return jsonResponse(response, 400, { error: "invalid_request_id" });
+        throw error;
       }
     }
 
@@ -365,7 +365,11 @@ const server = createServer(async (request, response) => {
         return jsonResponse(response, 202, queued);
       } catch (error) {
         const code = error instanceof Error ? error.message : "ACTION_FAILED";
-        return jsonResponse(response, ["SIGNATURE_INVALID", "SIGNER_NOT_OWNER"].includes(code) ? 403 : 400, { error: code.toLowerCase() });
+        const publicCode = [
+          "ADMIN_DISABLED", "CHALLENGE_INVALID", "SIGNATURE_INVALID", "SIGNER_NOT_OWNER",
+          "CONTROL_ACTION_INVALID", "CONTROL_CHALLENGE_EXPIRED", "CONTROL_NONCE_INVALID",
+        ].includes(code) ? code : "ACTION_FAILED";
+        return jsonResponse(response, ["SIGNATURE_INVALID", "SIGNER_NOT_OWNER"].includes(publicCode) ? 403 : 400, { error: publicCode.toLowerCase() });
       }
     }
 
@@ -464,6 +468,11 @@ const server = createServer(async (request, response) => {
         const code = error instanceof Error ? error.message : "action_failed";
         return jsonResponse(response, code === "SIGNATURE_INVALID" ? 403 : 400, { error: code.toLowerCase() });
       }
+    }
+
+    // Unknown legacy API paths must not fall through to the single-page app.
+    if (url.pathname === "/admin/api" || url.pathname.startsWith("/admin/api/")) {
+      throw new Error("NOT_FOUND");
     }
 
     if (adminPanelPath && url.pathname.replace(/\/$/, "") === adminPanelPath && request.method === "GET") {

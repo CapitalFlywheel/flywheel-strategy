@@ -1,6 +1,6 @@
 import { Keypair } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
-import { recoverableFeeAmount, type FeeSettlementState } from "./feeSettlement";
+import { markSameWalletRecovered, recoverableFeeAmount, type FeeSettlementState } from "./feeSettlement";
 
 const address = Keypair.generate().publicKey.toBase58();
 const signed = (signature: string) => ({ signature, transactionBase64: "", blockhash: "block", lastValidBlockHeight: 1 });
@@ -27,5 +27,12 @@ describe("fee recovery boundary", () => {
     expect(() => recoverableFeeAmount(unsettled)).toThrow("FEE_TRANSACTION_UNRESOLVED");
     unsettled.receipts.at(-1)!.state = "routing";
     expect(() => recoverableFeeAmount(unsettled)).toThrow("FEE_TRANSACTION_UNRESOLVED");
+  });
+
+  it("marks only uncommitted receipts accessible in the same creator/recovery wallet", () => {
+    const ledger = state();
+    expect(markSameWalletRecovered(ledger)).toBe(60n);
+    expect(ledger.receipts.map((row) => row.state)).toEqual(["routed", "recovered", "expired"]);
+    expect(() => markSameWalletRecovered(ledger)).toThrow("NO_UNCOMMITTED_FEES");
   });
 });

@@ -20,6 +20,10 @@ services:
   web:
     <<: *app
     command: npm run web:serve
+    volumes:
+      - ./data/public:/app/data/public:ro
+      - ./data/control/solana-requests:/app/data/control/solana-requests
+      - ./data/control/solana-status-visible:/app/data/control/solana-status-visible:ro
     env_file:
       - .env.web
     environment:
@@ -36,6 +40,7 @@ services:
 
   solana-control-runner:
     <<: *app
+    profiles: ["staging-automation"]
     command: npm run solana:control-runner
     env_file:
       - .env.solana
@@ -49,6 +54,7 @@ services:
 
   solana-holder-indexer:
     <<: *app
+    profiles: ["staging-automation"]
     command: npm run solana:holder-indexer
     env_file:
       - .env.solana

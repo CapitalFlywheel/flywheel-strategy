@@ -12,7 +12,7 @@ Every action requires a fresh Ed25519 signature from `SOLANA_ADMIN_OWNER`
 
 The signed challenge contains the exact action, owner, network, 60/40 allocation, issue time, five-minute expiry and a random one-time nonce
 
-The owner private key stays in Phantom, Solflare, Backpack or another Solana Wallet Standard compatible wallet. It is never uploaded to the server
+In the approved single-wallet configuration, the owner, Pump creator and recovery address are the same. The user keeps that wallet in Phantom, Solflare, Backpack or another compatible wallet for panel signatures; a protected copy of its keypair is also installed outside Git on the server for automatic creator-fee routing. This materially increases the impact of a server compromise. The panel still requires an exact signed challenge and never accepts arbitrary browser-supplied transactions
 
 ## Launch actions
 
@@ -32,6 +32,8 @@ The intended Pump.fun configuration is a custom pair with the official MSTRx quo
 - Resume after configuration and RPC consensus checks
 - Recover only uncommitted project-controlled balances
 
+When the dev wallet is also the recovery wallet, a paused recovery marks still-uncommitted creator receipts as already accessible there; it does not submit a self-transfer
+
 The panel does not accept arbitrary instructions or arbitrary destinations
 
 ## Reward and reserve actions
@@ -49,6 +51,7 @@ Each action has its own button and progress record. A generic multi-step signatu
 1. Install production RPC and service secrets outside Git
 2. Connect the configured owner wallet to the private panel
 3. Verify creator and operational wallet roles, official MSTRx mint and both RPC providers
+   The shared owner/creator/recovery role is explicit; operator, holder inventory and reserve remain distinct
 4. Arm detection immediately before the real launch
 5. Create CAPITAL on Pump.fun with the MSTRx custom pair, `creatorFeeBps: 200`, `holderReward: false` and creator rewards sent to the configured dev wallet
 6. Let the detector verify the actual MSTRx quote, fixed 2% fee and disabled native holder rewards, then activate only that mint without another owner signature
@@ -57,10 +60,14 @@ Each action has its own button and progress record. A generic multi-step signatu
 
 No production wallet is used for test launches
 
+Pump creator-fee vaults are keyed by creator address rather than CAPITAL mint. Do not use the same test or production creator for another MSTRx-paired Pump token, and verify that no older MSTRx creator fees remain before arming detection
+
 ## State protection
 
 Solana production state uses separate directories and service names from the legacy Robinhood deployment
 
 Activation starts from an empty Solana receipt ledger, holder cursor, epoch sequence and distribution journal. Legacy EVM addresses or cached epochs cannot be imported
 
-Every request file records its action, signer and timestamp. The constrained host runner maps the allowlisted action to audited code and never executes browser-provided shell commands
+Every request file records its exact signed action, owner, issue/expiry time and nonce. The constrained host runner independently verifies the signature, consumes the nonce in state unavailable to the web process, maps the allowlisted action to audited code and never executes browser-provided shell commands
+
+The panel follows each request through `queued`, `processed` or `failed` using a sanitized status marker. `Processed` means the runner action completed, not that an onchain transaction finalized. Raw signed requests and exception records are not exposed through the web container

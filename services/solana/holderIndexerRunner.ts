@@ -2,9 +2,16 @@ import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Connection } from "@solana/web3.js";
+import { bitqueryAuthFromEnv } from "./bitqueryAuth";
 import { BitqueryTransferSource } from "./bitqueryTransferSource";
 import { refreshHolderJournal } from "./holderJournal";
 import { finalizedConsensus, requireMatchingValues } from "./rpcConsensus";
+
+let transferSource: BitqueryTransferSource | undefined;
+
+function mintTransferSource() {
+  return transferSource ??= new BitqueryTransferSource(bitqueryAuthFromEnv());
+}
 
 function required(name: string) {
   const value = process.env[name]?.trim();
@@ -65,7 +72,7 @@ export async function indexHoldersOnce() {
       launchTime: launch.blockTime,
       epochSeconds,
     },
-    source: new BitqueryTransferSource(required("BITQUERY_API_KEY")),
+    source: mintTransferSource(),
     finalizedThroughSlot: target.slot,
     finalizedThroughTime: target.blockTime,
     finalizedBlockhash: target.blockhash,
@@ -78,8 +85,10 @@ async function main() {
   while (true) {
     try {
       await indexHoldersOnce();
-    } catch (error) {
-      await heartbeat(false, error instanceof Error ? error.message : "UNKNOWN");
+    } catch {
+      // Public heartbeat files must not include RPC/client exception text,
+      // which can contain authenticated endpoint URLs or API tokens.
+      await heartbeat(false, "HOLDER_INDEXER_FAILED");
     }
     await new Promise((delay) => setTimeout(delay, Number(process.env.SOLANA_HOLDER_INDEX_INTERVAL_MS || "300000")));
   }

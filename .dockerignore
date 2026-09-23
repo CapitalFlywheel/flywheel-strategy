@@ -9,6 +9,6 @@ artifacts
 cache
 coverage
 dist
+data
 work
 *.log
-

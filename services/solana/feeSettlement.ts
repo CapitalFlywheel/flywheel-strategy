@@ -221,6 +221,15 @@ export function recoverableFeeAmount(state: FeeSettlementState) {
     .reduce((sum, row) => sum + BigInt(row.collectedRaw ?? "0"), 0n);
 }
 
+export function markSameWalletRecovered(state: FeeSettlementState) {
+  const amount = recoverableFeeAmount(state);
+  if (amount <= 0n) throw new Error("NO_UNCOMMITTED_FEES");
+  for (const receipt of state.receipts) {
+    if (receipt.state === "collected") receipt.state = "recovered";
+  }
+  return amount;
+}
+
 export async function recoverUncommittedCreatorFees(environment: FeeSettlementEnvironment) {
   const state = await loadFeeSettlement(environment);
   const creatorAta = mstrxAta(new PublicKey(environment.creator), new PublicKey(environment.mint)).toBase58();
@@ -251,6 +260,13 @@ export async function recoverUncommittedCreatorFees(environment: FeeSettlementEn
   const amount = recoverableFeeAmount(state);
   if (amount <= 0n) throw new Error("NO_UNCOMMITTED_FEES");
   if (amount > await balance(environment, environment.creator)) throw new Error("RECOVERABLE_FEE_BALANCE_UNAVAILABLE");
+  if (environment.recovery === environment.creator) {
+    // In single-wallet mode the fee inventory is already in the recovery wallet.
+    // A self-transfer has zero net ATA delta and would falsely report recovery.
+    markSameWalletRecovered(state);
+    await save(environment, state);
+    return { pending: false, amount: amount.toString(), alreadyAtRecovery: true };
+  }
   const connection = new Connection(environment.rpcUrls[0], "confirmed");
   const operator = await loadKeypair(environment.operatorKeypairPath);
   const creator = await loadKeypair(environment.creatorKeypairPath);

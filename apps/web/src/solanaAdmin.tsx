@@ -15,6 +15,30 @@ interface SolanaAdminStatus {
 }
 
 interface Challenge { id: string; action: string; message: string; expiresAt: number; owner: string }
+interface PendingAction { requestId: string; action: string }
+interface ActionOutcome { requestId: string; state: "queued" | "processed" | "failed" }
+
+const pendingStorageKey = "flywheel-solana-pending-action";
+
+function storedPendingAction(): PendingAction | undefined {
+  try {
+    const value = sessionStorage.getItem(pendingStorageKey);
+    if (!value) return;
+    const parsed = JSON.parse(value) as PendingAction;
+    if (/^\d+-[a-f0-9]{16}$/.test(parsed.requestId) && typeof parsed.action === "string") return parsed;
+  } catch {
+    // An invalid browser-local progress record is not an authorization source
+  }
+}
+
+function savePendingAction(value: PendingAction | undefined) {
+  try {
+    if (value) sessionStorage.setItem(pendingStorageKey, JSON.stringify(value));
+    else sessionStorage.removeItem(pendingStorageKey);
+  } catch {
+    // Tracking remains live in React state when browser storage is unavailable
+  }
+}
 
 const actionGroups = [
   {
@@ -56,6 +80,7 @@ export function SolanaAdminPanel() {
   const [status, setStatus] = useState<SolanaAdminStatus>();
   const [busy, setBusy] = useState<string>();
   const [notice, setNotice] = useState("Connect the configured owner wallet to authorize an action");
+  const [pendingAction, setPendingAction] = useState<PendingAction | undefined>(storedPendingAction);
   const apiRoot = window.__FLYWHEEL_ADMIN_API__;
 
   const refresh = useCallback(async () => {
@@ -66,6 +91,34 @@ export function SolanaAdminPanel() {
   }, [apiRoot]);
 
   useEffect(() => { void refresh().catch(() => setNotice("Solana control API is not configured on this environment")); }, [refresh]);
+
+  useEffect(() => {
+    if (!apiRoot || !pendingAction) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch(`${apiRoot}/solana/request/${pendingAction.requestId}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("REQUEST_STATUS_UNAVAILABLE");
+        const outcome = await response.json() as ActionOutcome;
+        if (cancelled || outcome.requestId !== pendingAction.requestId) return;
+        if (outcome.state === "queued") {
+          setNotice(`Queued ${pendingAction.action} · ${pendingAction.requestId} · Waiting for server result`);
+          return;
+        }
+        savePendingAction(undefined);
+        setPendingAction(undefined);
+        setNotice(outcome.state === "processed"
+          ? `Processed ${pendingAction.action} · ${pendingAction.requestId} · Check live state; onchain transactions may still be pending`
+          : `Failed ${pendingAction.action} · ${pendingAction.requestId} · Inspect live state and pending transactions before retrying`);
+        void refresh().catch(() => undefined);
+      } catch {
+        if (!cancelled) setNotice(`Waiting to verify ${pendingAction.action} · ${pendingAction.requestId} · Do not resubmit yet`);
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [apiRoot, pendingAction, refresh]);
 
   const authorized = useMemo(() => Boolean(
     wallet.publicKey && status?.owner && wallet.publicKey.toBase58() === status.owner && wallet.signMessage,
@@ -90,7 +143,11 @@ export function SolanaAdminPanel() {
       });
       const result = await response.json() as { requestId?: string; error?: string };
       if (!response.ok) throw new Error(result.error || "ACTION_FAILED");
-      setNotice(`Queued ${action} · ${result.requestId}`);
+      if (!result.requestId || !/^\d+-[a-f0-9]{16}$/.test(result.requestId)) throw new Error("REQUEST_ID_INVALID");
+      const pending = { requestId: result.requestId, action };
+      savePendingAction(pending);
+      setPendingAction(pending);
+      setNotice(`Queued ${action} · ${result.requestId} · Waiting for server result`);
       await refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "ACTION_FAILED");
@@ -123,7 +180,7 @@ export function SolanaAdminPanel() {
 
     {actionGroups.map((group) => <section className="admin-launch-flow" key={group.title}>
       <div className="admin-card-head"><div><span>EXPLICIT ACTIONS</span><h2>{group.title}</h2></div><b>{authorized ? "OWNER READY" : "LOCKED"}</b></div>
-      <div className="solana-action-grid">{group.actions.map(([action, label, detail]) => <article key={action}><div><b>{label}</b><small>{detail}</small></div><button disabled={!authorized || Boolean(busy)} onClick={() => void runAction(action)}>{busy === action ? "SIGNING…" : "AUTHORIZE"}</button></article>)}</div>
+      <div className="solana-action-grid">{group.actions.map(([action, label, detail]) => <article key={action}><div><b>{label}</b><small>{detail}</small></div><button disabled={!authorized || Boolean(busy) || Boolean(pendingAction)} onClick={() => void runAction(action)}>{busy === action ? "SIGNING…" : "AUTHORIZE"}</button></article>)}</div>
     </section>)}
 
     <section className="admin-addresses">

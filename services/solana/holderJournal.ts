@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { readJsonIfExists, writeDurableJson } from "./durableJson";
 import { type FinalizedHolderJournal, type RewardEpochPlan } from "./epochPlanner";
 import { readAgreedFinalizedTransaction, type FinalizedTokenTransaction } from "./finalizedTransfers";
 import { type SolanaTransfer } from "./holderAccounting";
+import { requireMatchingValues } from "./rpcConsensus";
 
 export interface DiscoveredTransferTransaction {
   signature: string;
@@ -88,13 +89,37 @@ export async function refreshHolderJournal(args: {
   const fromTime = previous ? Math.max(environment.launchTime, previous.indexedThroughTime - overlap) : environment.launchTime;
   const found = await source.discover(environment.mint, fromTime, args.finalizedThroughTime + 1);
   const unique = new Map<string, DiscoveredTransferTransaction>();
+  let verifiedLaunch: FinalizedTokenTransaction | undefined;
   for (const row of found) {
     if (!Number.isInteger(row.slot) || !Number.isInteger(row.transactionIndex) || row.slot < environment.launchSlot || row.slot > args.finalizedThroughSlot) continue;
     const existing = unique.get(row.signature);
     if (existing && (existing.slot !== row.slot || existing.transactionIndex !== row.transactionIndex)) throw new Error("HOLDER_INDEX_DISCOVERY_CONFLICT");
     unique.set(row.signature, row);
   }
-  if (!previous && !unique.has(environment.launchSignature)) throw new Error("HOLDER_LAUNCH_NOT_IN_TRANSFER_SOURCE");
+  if (!previous && !unique.has(environment.launchSignature)) {
+    // A mint-creation transaction need not appear in a Transfers cube. Seed it
+    // from the independently agreed finalized transaction and block ordering.
+    const launch = await readAgreedFinalizedTransaction(environment.rpcUrls, environment.launchSignature, environment.mint);
+    if (!launch || launch.slot !== environment.launchSlot || launch.blockTime !== environment.launchTime) throw new Error("HOLDER_LAUNCH_TRANSACTION_UNVERIFIED");
+    verifiedLaunch = launch;
+    const positions = await Promise.all(environment.rpcUrls.map(async (url) => {
+      const block = await new Connection(url, "finalized").getBlockSignatures(environment.launchSlot, "finalized");
+      const transactionIndex = block.signatures.indexOf(environment.launchSignature);
+      if (transactionIndex < 0) throw new Error("HOLDER_LAUNCH_SIGNATURE_NOT_IN_BLOCK");
+      return { blockhash: block.blockhash, blockTime: block.blockTime, transactionIndex };
+    }));
+    const position = requireMatchingValues(positions, "HOLDER_LAUNCH_BLOCK_RPC_DISAGREEMENT");
+    if (position.blockhash !== launch.blockhash || position.blockTime !== launch.blockTime) throw new Error("HOLDER_LAUNCH_BLOCK_MISMATCH");
+    unique.set(environment.launchSignature, { signature: environment.launchSignature, slot: launch.slot, transactionIndex: position.transactionIndex });
+  }
+  // Preserve the separately verified launch transaction across overlap scans:
+  // a mint creation may never be emitted by the Transfers cube.
+  const cachedLaunch = previous?.transactions.find((row) => row.signature === environment.launchSignature);
+  if (cachedLaunch && cachedLaunch.blockTime >= fromTime && !unique.has(environment.launchSignature)) {
+    unique.set(environment.launchSignature, {
+      signature: cachedLaunch.signature, slot: cachedLaunch.slot, transactionIndex: cachedLaunch.transactionIndex,
+    });
+  }
   for (const row of previous?.transactions ?? []) {
     if (row.blockTime >= fromTime && row.blockTime <= args.finalizedThroughTime && !unique.has(row.signature)) {
       throw new Error("HOLDER_INDEX_PREVIOUS_TRANSFER_MISSING");
@@ -110,7 +135,8 @@ export async function refreshHolderJournal(args: {
         if (cached.slot !== row.slot || cached.transactionIndex !== row.transactionIndex) throw new Error("HOLDER_INDEX_CACHED_TRANSACTION_CONFLICT");
         return cached;
       }
-      const transaction = await readAgreedFinalizedTransaction(environment.rpcUrls, row.signature, environment.mint);
+      const transaction = row.signature === environment.launchSignature && verifiedLaunch
+        ? verifiedLaunch : await readAgreedFinalizedTransaction(environment.rpcUrls, row.signature, environment.mint);
       if (!transaction || transaction.slot !== row.slot || (row.signature !== environment.launchSignature && transaction.blockTime < fromTime) || transaction.blockTime > args.finalizedThroughTime) throw new Error("HOLDER_INDEX_TRANSACTION_UNVERIFIED");
       return {
         ...row,

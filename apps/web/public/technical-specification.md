@@ -85,9 +85,9 @@ It exposes separate controls for configuration verification, launch detection, b
 
 One pre-launch arm signature authorizes the detector window. The exact mint is verified, published and activated automatically after finalized detection, without a second post-launch owner signature
 
-The server never receives the owner private key and never accepts arbitrary browser-supplied transaction instructions
+The owner and Pump creator are the same user-controlled wallet. A protected server-side copy of that keypair is required for automatic creator-fee routing, while panel actions still require an exact wallet signature. This means a server compromise could also compromise owner authority. The server never accepts arbitrary browser-supplied transaction instructions
 
-Committed holder rewards cannot be recovered
+The current distributor commits and tracks funded holder allocations in its durable journal, and its permitted recovery path excludes that committed inventory. This is an operational software restriction, not an immutable on-chain vault: the holder-inventory signing key is server-held. Completed transfers cannot be recalled
 
 ## Public verification
 

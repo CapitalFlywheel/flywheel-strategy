@@ -22,6 +22,34 @@ export interface RewardPipelineEnvironment {
   minimumRawMstrx?: bigint;
 }
 
+interface HolderIndexerHeartbeat {
+  service: string;
+  ok: boolean;
+  updatedAt: number;
+}
+
+export function assertHolderJournalReady(args: {
+  journal: FinalizedHolderJournal;
+  previous?: Pick<RewardEpochPlan, "epochId" | "windowEnd" | "finalized">;
+  heartbeat: HolderIndexerHeartbeat;
+  latestFinalizedTime: number;
+  nowMs: number;
+}) {
+  const { journal, previous, heartbeat, latestFinalizedTime, nowMs } = args;
+  if (heartbeat.service !== "solana-holder-indexer" || heartbeat.ok !== true || !Number.isSafeInteger(heartbeat.updatedAt)
+    || heartbeat.updatedAt > nowMs + 60_000 || nowMs - heartbeat.updatedAt > 15 * 60_000) {
+    throw new Error("HOLDER_INDEXER_UNHEALTHY");
+  }
+  if (!Number.isSafeInteger(journal.windowEnd) || !Number.isSafeInteger(latestFinalizedTime)
+    || journal.windowEnd > latestFinalizedTime || latestFinalizedTime - journal.windowEnd > 30 * 60) {
+    throw new Error("HOLDER_JOURNAL_STALE");
+  }
+  if (previous && (previous.finalized !== true || BigInt(journal.epochId) !== BigInt(previous.epochId) + 1n
+    || journal.windowStart !== previous.windowEnd)) {
+    throw new Error("HOLDER_JOURNAL_EPOCH_NOT_ADVANCED");
+  }
+}
+
 function currentPlanPath(environment: RewardPipelineEnvironment) {
   return resolve(environment.stateRoot, "reward-epochs", "current.json");
 }
@@ -46,24 +74,43 @@ async function verifyJournalFinality(environment: RewardPipelineEnvironment, jou
       rewards: false,
       maxSupportedTransactionVersion: 0,
     });
-    if (!block) throw new Error("HOLDER_FINALITY_BLOCK_MISSING");
-    return block.blockhash;
+    if (!block || block.blockTime === null) throw new Error("HOLDER_FINALITY_BLOCK_MISSING");
+    return { blockhash: block.blockhash, blockTime: block.blockTime };
   }));
-  const blockhash = requireMatchingValues(blocks, "HOLDER_FINALITY_RPC_DISAGREEMENT");
-  if (blockhash !== journal.finalizedBlockhash) throw new Error("HOLDER_FINALITY_BLOCKHASH_MISMATCH");
+  const block = requireMatchingValues(blocks, "HOLDER_FINALITY_RPC_DISAGREEMENT");
+  if (block.blockhash !== journal.finalizedBlockhash || block.blockTime !== journal.windowEnd) throw new Error("HOLDER_FINALITY_BLOCKHASH_MISMATCH");
+  const latestBlocks = await Promise.all(environment.rpcUrls.map(async (url) => {
+    const latest = await new Connection(url, "finalized").getBlock(consensus.slot, {
+      commitment: "finalized", transactionDetails: "none", rewards: false, maxSupportedTransactionVersion: 0,
+    });
+    if (!latest || latest.blockTime === null) throw new Error("HOLDER_LATEST_FINALITY_BLOCK_MISSING");
+    return { blockhash: latest.blockhash, blockTime: latest.blockTime };
+  }));
+  const latest = requireMatchingValues(latestBlocks, "HOLDER_LATEST_FINALITY_RPC_DISAGREEMENT");
+  if (latest.blockhash !== consensus.blockhash) throw new Error("HOLDER_LATEST_FINALITY_BLOCKHASH_MISMATCH");
+  return latest.blockTime;
 }
 
 export async function prepareRewardEpoch(environment: RewardPipelineEnvironment) {
+  let previous: RewardEpochPlan | undefined;
   try {
-    const current = await loadCurrentRewardPlan(environment);
-    if (!current.finalized) throw new Error("REWARD_EPOCH_ALREADY_ACTIVE");
+    previous = await loadCurrentRewardPlan(environment);
+    if (!previous.finalized) throw new Error("REWARD_EPOCH_ALREADY_ACTIVE");
   } catch (error) {
     if (error instanceof Error && error.message === "REWARD_EPOCH_ALREADY_ACTIVE") throw error;
     if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") throw error;
   }
   const journal = JSON.parse(await readFile(environment.journalPath, "utf8")) as FinalizedHolderJournal;
   if (new PublicKey(journal.capitalMint).toBase58() !== new PublicKey(environment.capitalMint).toBase58()) throw new Error("HOLDER_JOURNAL_MINT_MISMATCH");
-  await verifyJournalFinality(environment, journal);
+  const latestFinalizedTime = await verifyJournalFinality(environment, journal);
+  let heartbeat: HolderIndexerHeartbeat;
+  try {
+    heartbeat = JSON.parse(await readFile(resolve(environment.publicDataRoot, "status", "solana-holder-indexer.json"), "utf8")) as HolderIndexerHeartbeat;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") throw new Error("HOLDER_INDEXER_HEARTBEAT_MISSING");
+    throw error;
+  }
+  assertHolderJournalReady({ journal, previous, heartbeat, latestFinalizedTime, nowMs: Date.now() });
   const holder = await loadKeypair(environment.holderKeypairPath);
   const mint = new PublicKey(environment.mstrxMint);
   const amounts = await Promise.all(environment.rpcUrls.map(async (url) => {

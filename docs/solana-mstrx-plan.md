@@ -91,13 +91,15 @@ Before production the history source must prove finalized CAPITAL transfers with
 
 - The dev creator wallet owns the fee destination and remains under project control
 - The operator wallet pays SOL transaction fees only
-- The holder inventory wallet contains only MSTRx committed for holder distribution
+- The holder inventory wallet contains MSTRx for holder distribution and has a separate server-held signing key; the commitment is enforced by service logic and accounting, not an immutable on-chain vault
 - The reserve wallet contains only the strategic 40% allocation
 - Marketing funds remain separate
 - The private panel can pause routing and recover only uncommitted MSTRx still present in project-controlled staging accounts to the configured recovery wallet, which may be the owner wallet
 - Completed holder transfers are never reclaimed
 
-The creator service key is installed outside Git in a protected keypair file because routing transfers require its Token-2022 signature. The public owner key never enters the server
+The approved single-wallet configuration uses one user-controlled address for owner, Pump creator and recovery. Its keypair is installed outside Git in a protected file because automatic fee routing requires its Token-2022 signature. This exposes owner authority if the server is compromised, even though panel actions still require signed challenges. Operator and holder-settlement service keys remain separate, and no reserve private key is installed on the server
+
+Pump creator-fee vaults are scoped to creator and quote asset, not CAPITAL mint. This wallet must not launch another MSTRx-paired Pump token or carry earlier uncollected MSTRx creator fees; otherwise the current receipt accounting cannot attribute the mixed vault balance to CAPITAL
 
 ## Owner control plane
 
@@ -139,8 +141,8 @@ Wallet connection remains unnecessary for receiving rewards
 
 ## Remaining production blockers
 
-- final Solana owner, creator, operator, holder-inventory, reserve, recovery and marketing public keys
-- protected server paths for creator, operator and holder keypairs; reserve and recovery private keys stay off-server
+- final Solana owner/creator/recovery address, distinct operator, holder-inventory and reserve public keys, and optional marketing public key
+- protected server paths for the shared owner/creator keypair and separate operator and holder keypairs; reserve private key stays off-server
 - new X account URL
 - production primary and independent fallback Solana RPC providers
 - production Bitquery or equivalent mint-wide transfer-history coverage, tested against CAPITAL transfers and with a verified backfill route for outages beyond realtime retention
