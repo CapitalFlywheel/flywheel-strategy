@@ -2,7 +2,7 @@
 
 ## Readiness snapshot · 23 September 2026
 
-- Repository branch `solana-mstrx` contains the Solana web UI, private signed-action panel, two-RPC launch validation, durable fee settlement, mint-wide holder journal, and restart-aware direct MSTRx payout code
+- Repository branch `solana-mstrx` contains the Solana web UI, private signed-action panel, two-RPC launch validation, durable fee settlement, mint-wide holder journal, restart-aware direct MSTRx payout code, and a dual-RPC-checked public vault snapshot
 - Local TypeScript, Solana tests, web tests, web build and publishable-file secret scan pass
 - The public domain responds, but this repository revision has not been installed on the VPS; the existing deploy SSH key is currently rejected by the server
 - No Solana production wallet roles, authenticated RPC URLs, Bitquery credential, new X link, or CAPITAL mint have been configured

@@ -36,7 +36,7 @@ ADMIN_PANEL_PATH=
 
 Keypair files must be readable only by their dedicated service account. The public website receives only the public admin address and sanitized status files; `web` must not load `.env.solana`
 
-`SOLANA_RPC_PRIMARY_URL` is intended for a private Solana Mainnet Alchemy app. `SOLANA_RPC_FALLBACK_URL` must come from an independent provider such as Helius, not another app at Alchemy. Keep both authenticated URLs server-side. The browser may use the public Solana RPC only for non-critical wallet reads
+`SOLANA_RPC_PRIMARY_URL` is intended for a private Solana Mainnet Alchemy app. `SOLANA_RPC_FALLBACK_URL` must come from an independent provider such as Helius, not another app at Alchemy. Keep both authenticated URLs server-side. The public vault balances and MSTRx multiplier are published as a dual-RPC-checked server snapshot every minute after activation; the browser never queries an authenticated RPC for these values and hides snapshots older than five minutes. The optional wallet adapter may still use the public Solana RPC for non-critical wallet connection
 
 The current mint-wide transfer discovery adapter uses Bitquery V2 `Solana(dataset: realtime)` and a protected `BITQUERY_API_KEY`. It re-reads an overlapping hour, verifies newly discovered signatures against both RPCs, and fails if a previously indexed transfer disappears. Bitquery's realtime transfer history has short retention; a gap longer than six hours stops distribution and requires a verified historical backfill. Do not restart from an incomplete index, use `getSignaturesForAddress(mint)` as a substitute, or infer a reward epoch from a current holder snapshot
 

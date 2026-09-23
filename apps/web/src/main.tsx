@@ -5,7 +5,7 @@ import { WalletModalProvider, WalletMultiButton } from "@solana/wallet-adapter-r
 import "@solana/wallet-adapter-react-ui/styles.css";
 import "./styles.css";
 import "./redesign.css";
-import { formatMstrxRaw, readMstrxMultiplier, readTokenAccountBalance } from "./chain";
+import { formatMstrxRaw } from "./chain";
 import { solanaMainnet, solscanAccount, solscanToken, solscanTransaction } from "./network";
 import { isSolanaPublicKey, shortPublicKey } from "./wallets";
 
@@ -41,6 +41,13 @@ interface ServiceHeartbeat {
   ok: boolean;
   updatedAt: number;
   error?: string;
+}
+
+interface VaultSnapshot {
+  holderDisplay: string;
+  reserveDisplay: string;
+  multiplier: number;
+  updatedAt: number;
 }
 
 interface MarketStatus {
@@ -200,7 +207,7 @@ function useRuntimeData() {
       .then(setMarket)
       .catch(() => undefined);
 
-    const services = ["solana-fee-keeper", "solana-reward-publisher", "solana-distributor", "solana-governance-keeper"];
+    const services = ["solana-fee-keeper", "solana-holder-indexer", "solana-reward-publisher", "solana-distributor", "solana-governance-keeper"];
     void Promise.all(services.map(async (service) => {
       try {
         const response = await fetch(`/status/${service}.json`, { cache: "no-store" });
@@ -222,12 +229,33 @@ function App() {
   const [mstrxMultiplier, setMstrxMultiplier] = useState(1);
 
   useEffect(() => {
-    void readMstrxMultiplier().then(setMstrxMultiplier);
     if (!config) return;
-    void Promise.all([
-      readTokenAccountBalance(config.rewardVaultTokenAccount),
-      readTokenAccountBalance(config.reserveVaultTokenAccount),
-    ]).then(([reward, reserve]) => { setRewardBalance(reward); setReserveBalance(reserve); });
+    let cancelled = false;
+    const refresh = async () => {
+      const hideBalances = () => {
+        if (cancelled) return;
+        setRewardBalance("—");
+        setReserveBalance("—");
+      };
+      try {
+        const response = await fetch("/snapshots/solana-vaults.json", { cache: "no-store" });
+        if (!response.ok) { hideBalances(); return; }
+        const snapshot = await response.json() as VaultSnapshot;
+        if (cancelled) return;
+        if (!Number.isFinite(snapshot.updatedAt) || Date.now() - snapshot.updatedAt > 300_000
+          || !Number.isFinite(snapshot.multiplier) || snapshot.multiplier <= 0
+          || typeof snapshot.holderDisplay !== "string" || typeof snapshot.reserveDisplay !== "string") {
+          hideBalances();
+          return;
+        }
+        setRewardBalance(snapshot.holderDisplay);
+        setReserveBalance(snapshot.reserveDisplay);
+        setMstrxMultiplier(snapshot.multiplier);
+      } catch { hideBalances(); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [config]);
 
   const phase = market?.phase === "pumpswap" ? "PumpSwap" : market?.phase === "pump-curve" ? "Pump curve" : "Pre-launch";

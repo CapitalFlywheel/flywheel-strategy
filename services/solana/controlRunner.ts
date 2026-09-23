@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { bondingCurvePda, bondingCurveV2Pda, canonicalPumpPoolPda, canonicalPumpPoolPdaWithQuote, pumpPoolAuthorityPda } from "@pump-fun/pump-sdk";
-import { ExtensionType, getAccount, getExtensionTypes, getMint, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
+import { ExtensionType, getAccount, getExtensionTypes, getMint, getScaledUiAmountConfig, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { verifyFixedMstrxPumpLaunch } from "./launchVerifier";
 import { detectAgreedCreatorPumpLaunch } from "./launchDetector";
 import { createMstrxAtaInstruction, mstrxAta } from "./mstrxTransfers";
@@ -129,6 +129,33 @@ async function publishRuntimeConfig(status: ControlStatus, launchedAtSlot: numbe
 
 async function rawMstrxBalance(connection: Connection, owner: PublicKey) {
   return (await getAccount(connection, mstrxAta(owner, mstrxMint()), "confirmed", TOKEN_2022_PROGRAM_ID)).amount;
+}
+
+async function publishPublicBalances(status: ControlStatus) {
+  if (!status.launch.activated) return false;
+  const mint = mstrxMint();
+  const holderAta = mstrxAta(new PublicKey(required("SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY")), mint);
+  const reserveAta = mstrxAta(new PublicKey(required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY")), mint);
+  const snapshots = await Promise.all(rpcUrls().map(async (url) => {
+    const connection = new Connection(url, "finalized");
+    const [mintAccount, holder, reserve] = await Promise.all([
+      getMint(connection, mint, "finalized", TOKEN_2022_PROGRAM_ID),
+      connection.getTokenAccountBalance(holderAta, "finalized"),
+      connection.getTokenAccountBalance(reserveAta, "finalized"),
+    ]);
+    const scaled = getScaledUiAmountConfig(mintAccount);
+    const effective = scaled && BigInt(Math.floor(Date.now() / 1_000)) >= scaled.newMultiplierEffectiveTimestamp;
+    return {
+      holderRaw: holder.value.amount,
+      reserveRaw: reserve.value.amount,
+      holderDisplay: holder.value.uiAmountString ?? "0",
+      reserveDisplay: reserve.value.uiAmountString ?? "0",
+      multiplier: scaled ? effective ? scaled.newMultiplier : scaled.multiplier : 1,
+    };
+  }));
+  const snapshot = requireMatchingValues(snapshots, "PUBLIC_VAULT_RPC_DISAGREEMENT");
+  await writeDurableJson(resolve(process.env.PUBLIC_DATA_ROOT || "data/public", "snapshots", "solana-vaults.json"), { ...snapshot, updatedAt: Date.now() });
+  return true;
 }
 
 async function verifyPrelaunch(status: ControlStatus) {
@@ -384,6 +411,7 @@ async function main() {
   let lastLaunchTick = 0;
   let lastFeeTick = 0;
   let lastRewardTick = 0;
+  let lastPublicBalanceTick = 0;
   while (true) {
     const processed = await processOnce();
     const now = Date.now();
@@ -418,6 +446,16 @@ async function main() {
         const detail = error instanceof Error ? error.message : "UNKNOWN";
         status.services["solana-distributor"] = { ok: false, updatedAt: Date.now(), detail };
         await Promise.all([saveStatus(status), saveHeartbeat("solana-distributor", false, detail)]);
+      }
+    }
+    if (!processed && now - lastPublicBalanceTick >= 60_000) {
+      lastPublicBalanceTick = now;
+      const status = await readStatus();
+      try {
+        if (await publishPublicBalances(status)) await saveHeartbeat("solana-public-snapshot", true);
+      }
+      catch (error) {
+        await saveHeartbeat("solana-public-snapshot", false, error instanceof Error ? error.message : "UNKNOWN");
       }
     }
     if (!processed) await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000));
