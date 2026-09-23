@@ -327,13 +327,13 @@ function App() {
     </section>
 
     <section className="governance-callout">
-      <div><span>06 · HOLDER GOVERNANCE</span><h2>THE RESERVE MOVES BY VOTE</h2><p>The team starts a vote and eligible holders choose through the restricted Solana governance program</p></div>
+      <div><span>06 · HOLDER GOVERNANCE</span><h2>RESERVE GOVERNANCE</h2><p>Voting is not active yet · Any reserve vote will require a reviewed Solana program and published rules</p></div>
       <a href="/governance" target="_blank" rel="noreferrer">Open governance ↗</a>
     </section>
 
     <section className="transparency" id="transparency">
       <span>PUBLIC BY DEFAULT</span>
-      <h2>Every MSTRx fee sweep, 60/40 allocation, payout batch, vote and reserve execution stays visible</h2>
+      <h2>MSTRx fee sweeps, 60/40 allocations and payout batches will be publicly traceable after launch</h2>
       <p>{config ? "Every live Solana address links directly to the public explorer" : "The final mint and program addresses will appear here after the verified Pump.fun launch"}</p>
       <div className="project-contract-card"><span>CAPITAL TOKEN MINT</span>{config ? <a href={solscanToken(config.projectMint)} target="_blank" rel="noreferrer">{config.projectMint} ↗</a> : <b>PUBLISHED HERE AFTER MAINNET LAUNCH</b>}</div>
       {config && <div className="address-grid">{[
@@ -414,7 +414,7 @@ function DocumentationPage() {
 
 function GovernancePage() {
   const links = usePublicLinks();
-  return <main><Header links={links} /><section className="subpage-hero governance-hero"><span>SOLANA HOLDER GOVERNANCE</span><h1>THE RESERVE MOVES BY VOTE</h1><p>The restricted governance program is being prepared for the verified CAPITAL launch</p></section><section className="panel governance governance-page-panel"><div className="panel-head"><div><span className="section-number">PRE-LAUNCH</span><h2>No active proposal</h2></div><span className="pill">NOT STARTED</span></div><div className="option-grid">{governanceActions.map(([title, detail], index) => <div key={title}><span>0{index + 1}</span><b>{title}</b><small>{detail}</small></div>)}</div><footer><span>Voting weight: balance + hold time</span><span>Quorum: 7%</span><span>Execution delay: 5 minutes</span><span>Arbitrary calls: blocked</span></footer></section><Footer links={links} /></main>;
+  return <main><Header links={links} /><section className="subpage-hero governance-hero"><span>SOLANA HOLDER GOVERNANCE</span><h1>RESERVE GOVERNANCE</h1><p>Voting is not active · Rules and the restricted execution program will be published after independent review</p></section><section className="panel governance governance-page-panel"><div className="panel-head"><div><span className="section-number">NOT ACTIVE</span><h2>No active proposal</h2></div><span className="pill">NOT STARTED</span></div><div className="option-grid">{governanceActions.map(([title, detail], index) => <div key={title}><span>0{index + 1}</span><b>{title}</b><small>{detail}</small></div>)}</div><footer><span>Illustrative reserve actions only</span><span>Voting and execution remain disabled until the reviewed program is deployed</span></footer></section><Footer links={links} /></main>;
 }
 
 const SolanaAdminPanel = lazy(() => import("./solanaAdmin").then((module) => ({ default: module.SolanaAdminPanel })));

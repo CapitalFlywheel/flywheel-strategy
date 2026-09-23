@@ -7,6 +7,7 @@ export const MAX_LOYALTY_HOURS = 720;
 export interface SolanaTransfer {
   signature: string;
   slot: number;
+  transactionIndex?: number;
   instructionIndex: number;
   timestamp: number;
   from?: string;
@@ -115,7 +116,7 @@ export function buildPushDistribution(weights: ReadonlyMap<string, bigint>, fund
   let assigned = provisional.reduce((sum, row) => sum + row.rawMstrx, 0n);
   const remainderOrder = [...provisional].sort((a, b) => a.remainder === b.remainder ? a.recipient.localeCompare(b.recipient) : a.remainder > b.remainder ? -1 : 1);
   for (let index = 0; assigned < fundedRawMstrx; index += 1) { remainderOrder[index].rawMstrx += 1n; assigned += 1n; }
-  const allocations = provisional.map(({ recipient, rawMstrx }) => ({ recipient, rawMstrx }));
+  const allocations = provisional.filter((row) => row.rawMstrx > 0n).map(({ recipient, rawMstrx }) => ({ recipient, rawMstrx }));
   const batches: PushBatch[] = [];
   for (let index = 0; index < allocations.length; index += batchSize) {
     const batchAllocations = allocations.slice(index, index + batchSize);

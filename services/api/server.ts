@@ -69,7 +69,7 @@ const solanaAdminOwner = (() => {
 const allowedSolanaActions = new Set([
   "verify_launch_config", "arm_launch_detection", "disarm_launch_detection", "activate_postlaunch",
   "sweep_curve_fees", "sweep_pumpswap_fees", "pause_conversions", "resume_conversions",
-  "recover_uncommitted",
+  "recover_uncommitted", "reconcile_fee_receipts",
   "prepare_reward_epoch", "distribute_reward_epoch", "finalize_reward_epoch",
 ]);
 const challenges = new Map<string, { action: string; message: string; expiresAt: number; payload?: unknown }>();

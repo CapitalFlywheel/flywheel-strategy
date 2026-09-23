@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Connection, PublicKey, type TransactionInstruction } from "@solana/web3.js";
 import { getAccount, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
@@ -6,6 +6,8 @@ import { assertRewardPlanHash, buildRewardEpochPlan, type FinalizedHolderJournal
 import { createMstrxAtaInstruction, createMstrxTransfer, mstrxAta } from "./mstrxTransfers";
 import { finalizedConsensus, requireMatchingValues } from "./rpcConsensus";
 import { broadcastPreparedTransaction, loadKeypair, prepareSignedTransaction } from "./transactions";
+import { readAgreedFinalizedTransaction, tokenAccountDelta } from "./finalizedTransfers";
+import { writeDurableJson } from "./durableJson";
 
 export interface RewardPipelineEnvironment {
   rpcUrls: readonly [string, string];
@@ -25,8 +27,7 @@ function currentPlanPath(environment: RewardPipelineEnvironment) {
 }
 
 async function savePlan(environment: RewardPipelineEnvironment, plan: RewardEpochPlan) {
-  await mkdir(resolve(environment.stateRoot, "reward-epochs"), { recursive: true });
-  await writeFile(currentPlanPath(environment), JSON.stringify(plan, null, 2), { encoding: "utf8", mode: 0o600, flush: true });
+  await writeDurableJson(currentPlanPath(environment), plan);
 }
 
 export async function loadCurrentRewardPlan(environment: RewardPipelineEnvironment) {
@@ -65,13 +66,16 @@ export async function prepareRewardEpoch(environment: RewardPipelineEnvironment)
   await verifyJournalFinality(environment, journal);
   const holder = await loadKeypair(environment.holderKeypairPath);
   const mint = new PublicKey(environment.mstrxMint);
-  const connection = new Connection(environment.rpcUrls[0], "confirmed");
-  const source = await getAccount(connection, mstrxAta(holder.publicKey, mint), "confirmed", TOKEN_2022_PROGRAM_ID);
-  if (source.amount < (environment.minimumRawMstrx ?? 1n)) throw new Error("HOLDER_INVENTORY_BELOW_MINIMUM");
+  const amounts = await Promise.all(environment.rpcUrls.map(async (url) => {
+    const source = await getAccount(new Connection(url, "finalized"), mstrxAta(holder.publicKey, mint), "finalized", TOKEN_2022_PROGRAM_ID);
+    return source.amount.toString();
+  }));
+  const fundedRawMstrx = BigInt(requireMatchingValues(amounts, "HOLDER_FUNDING_RPC_DISAGREEMENT"));
+  if (fundedRawMstrx < (environment.minimumRawMstrx ?? 1n)) throw new Error("HOLDER_INVENTORY_BELOW_MINIMUM");
   const plan = buildRewardEpochPlan({
     epochId: BigInt(journal.epochId),
     journal,
-    fundedRawMstrx: source.amount,
+    fundedRawMstrx,
     excluded: environment.excluded,
     batchSize: 3,
   });
@@ -93,14 +97,26 @@ async function reconcileSubmitted(args: {
   const lastValidBlockHeight = kind === "ata" ? batch.ataLastValidBlockHeight : batch.lastValidBlockHeight;
   const connection = new Connection(environment.rpcUrls[0], "confirmed");
   if (!signature || !transactionBase64 || !blockhash || !lastValidBlockHeight) throw new Error("SUBMITTED_BATCH_STATE_INVALID");
-  const status = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
-  if (status?.err) throw new Error(`REWARD_BATCH_FAILED:${JSON.stringify(status.err)}`);
-  if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+  const finalized = await readAgreedFinalizedTransaction(environment.rpcUrls, signature, environment.mstrxMint);
+  if (finalized) {
+    if (kind === "transfer") {
+      const sourceAta = mstrxAta((await loadKeypair(environment.holderKeypairPath)).publicKey, new PublicKey(environment.mstrxMint)).toBase58();
+      if (tokenAccountDelta(finalized, sourceAta) !== -BigInt(batch.rawTotal)) throw new Error("REWARD_BATCH_SOURCE_DELTA_MISMATCH");
+      for (const allocation of batch.allocations) {
+        const recipientAta = mstrxAta(new PublicKey(allocation.recipient), new PublicKey(environment.mstrxMint)).toBase58();
+        if (tokenAccountDelta(finalized, recipientAta) !== BigInt(allocation.rawMstrx)) throw new Error("REWARD_BATCH_RECIPIENT_DELTA_MISMATCH");
+      }
+    }
     if (kind === "ata") batch.ataState = "confirmed"; else batch.state = "confirmed";
     await savePlan(environment, plan);
     return;
   }
-  if ((await connection.getBlockHeight("confirmed")) > lastValidBlockHeight) {
+  const statuses = await Promise.all(environment.rpcUrls.map(async (url) =>
+    (await new Connection(url, "finalized").getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0],
+  ));
+  if (statuses.some((status) => status?.err)) throw new Error("REWARD_BATCH_ONCHAIN_FAILURE");
+  const heights = await Promise.all(environment.rpcUrls.map((url) => new Connection(url, "finalized").getBlockHeight("finalized")));
+  if (statuses.every((status) => status === null) && heights.every((height) => height > lastValidBlockHeight + 32)) {
     if (kind === "ata") {
       batch.ataState = "pending"; batch.ataSignature = undefined; batch.ataTransactionBase64 = undefined; batch.ataBlockhash = undefined; batch.ataLastValidBlockHeight = undefined;
     } else {
@@ -109,9 +125,9 @@ async function reconcileSubmitted(args: {
     await savePlan(environment, plan);
     return;
   }
-  await broadcastPreparedTransaction({ connection, transactionBase64, signature, blockhash, lastValidBlockHeight });
-  if (kind === "ata") batch.ataState = "confirmed"; else batch.state = "confirmed";
-  await savePlan(environment, plan);
+  if (heights.every((height) => height <= lastValidBlockHeight)) {
+    await connection.sendRawTransaction(Buffer.from(transactionBase64, "base64"), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
+  }
 }
 
 export async function distributeRewardEpoch(environment: RewardPipelineEnvironment) {
@@ -138,9 +154,9 @@ export async function distributeRewardEpoch(environment: RewardPipelineEnvironme
       batch.ataLastValidBlockHeight = prepared.lastValidBlockHeight;
       await savePlan(environment, plan);
       await broadcastPreparedTransaction({ connection, ...prepared });
-      batch.ataState = "confirmed";
-      await savePlan(environment, plan);
+      await reconcileSubmitted({ environment, plan, batchIndex: index, kind: "ata" });
     }
+    if (batch.ataState !== "confirmed") return plan;
 
     if (batch.state === "submitted") await reconcileSubmitted({ environment, plan, batchIndex: index, kind: "transfer" });
     if (batch.state === "pending") {
@@ -162,9 +178,9 @@ export async function distributeRewardEpoch(environment: RewardPipelineEnvironme
       batch.lastValidBlockHeight = prepared.lastValidBlockHeight;
       await savePlan(environment, plan);
       await broadcastPreparedTransaction({ connection, ...prepared });
-      batch.state = "confirmed";
-      await savePlan(environment, plan);
+      await reconcileSubmitted({ environment, plan, batchIndex: index, kind: "transfer" });
     }
+    if (batch.state !== "confirmed") return plan;
   }
   return plan;
 }
@@ -174,8 +190,6 @@ export async function finalizeRewardEpoch(environment: RewardPipelineEnvironment
   if (plan.batches.some((batch) => batch.state !== "confirmed")) throw new Error("REWARD_BATCHES_INCOMPLETE");
   const distributed = plan.batches.reduce((total, batch) => total + BigInt(batch.rawTotal), 0n);
   if (distributed !== BigInt(plan.fundedRawMstrx)) throw new Error("REWARD_EPOCH_NOT_CONSERVED");
-  plan.finalized = true;
-  await savePlan(environment, plan);
   const publicPlan = {
     epochId: plan.epochId,
     windowStart: plan.windowStart,
@@ -187,7 +201,7 @@ export async function finalizeRewardEpoch(environment: RewardPipelineEnvironment
     batches: plan.batches.map((batch) => ({ id: batch.id, rawTotal: batch.rawTotal, signature: batch.signature, allocations: batch.allocations })),
   };
   await mkdir(environment.publicDataRoot, { recursive: true });
-  await writeFile(resolve(environment.publicDataRoot, `solana-reward-epoch-${plan.epochId}.json`), JSON.stringify(publicPlan, null, 2), { encoding: "utf8", mode: 0o644, flush: true });
+  await writeDurableJson(resolve(environment.publicDataRoot, `solana-reward-epoch-${plan.epochId}.json`), publicPlan);
   const historyRoot = resolve(environment.publicDataRoot, "snapshots");
   const historyPath = resolve(historyRoot, "history.json");
   let history: Array<{ epoch: number; windowEnd: number; mstrxRewardRaw: string; signature?: string; recipientCount: number }> = [];
@@ -206,6 +220,8 @@ export async function finalizeRewardEpoch(environment: RewardPipelineEnvironment
   };
   history = [entry, ...history.filter((item) => item.epoch !== entry.epoch)].slice(0, 50);
   await mkdir(historyRoot, { recursive: true });
-  await writeFile(historyPath, JSON.stringify(history, null, 2), { encoding: "utf8", mode: 0o644, flush: true });
+  await writeDurableJson(historyPath, history);
+  plan.finalized = true;
+  await savePlan(environment, plan);
   return plan;
 }

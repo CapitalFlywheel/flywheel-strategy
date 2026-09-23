@@ -85,7 +85,7 @@ export function buildRewardEpochPlan(args: {
   if (!Number.isInteger(journal.finalizedThroughSlot) || journal.finalizedThroughSlot <= 0 || !journal.finalizedBlockhash) throw new Error("HOLDER_FINALITY_EVIDENCE_INVALID");
   const engine = new SolanaHoldingEngine(journal.windowStart, journal.windowEnd, args.excluded);
   const transfers = journal.transfers.map((transfer) => ({ ...transfer, rawAmount: BigInt(transfer.rawAmount) }))
-    .sort((a, b) => a.slot - b.slot || a.instructionIndex - b.instructionIndex || a.signature.localeCompare(b.signature));
+    .sort((a, b) => a.slot - b.slot || (a.transactionIndex ?? 0) - (b.transactionIndex ?? 0) || a.instructionIndex - b.instructionIndex || a.signature.localeCompare(b.signature));
   if (transfers.some((transfer) => transfer.slot > journal.finalizedThroughSlot)) throw new Error("HOLDER_TRANSFER_NOT_FINALIZED");
   for (const transfer of transfers) engine.apply(transfer);
   const distribution = buildPushDistribution(engine.finalize(), args.fundedRawMstrx, args.batchSize ?? 3);

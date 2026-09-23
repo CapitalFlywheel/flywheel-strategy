@@ -79,7 +79,7 @@ The CAPITAL mint does not exist until the real Pump.fun launch. No production de
 
 Holder reward inventory, strategic reserve inventory, operating SOL and marketing funds remain separate
 
-Governance can execute only published reserve actions through a restricted Solana program. Public governance claims remain disabled until the program has been audited and deployed
+Governance is planned to execute only published reserve actions through a restricted Solana program. Public voting and execution are disabled until that program has been audited and deployed
 
 The owner panel exposes separate signed actions for launch verification, launch detection, both fee routes, routing pause, epoch preparation, automatic distribution, finalization and recovery of uncommitted balances. One pre-launch arm signature is enough for the detector to verify, publish and activate the exact Pump mint
 
@@ -87,7 +87,7 @@ Committed holder rewards cannot be recovered by the owner
 
 ## CURRENT STATUS
 
-The repository contains the Solana public site, wallet layer, fixed 2% custom-pair validation, one-signature launch detector, exact 60/40 allocation, both Pump fee collection paths, Token-2022 transfer-hook support, crash-safe automatic payout batches, RPC-consensus guards and private control surface
+The repository contains the Solana public site, wallet layer, fixed 2% custom-pair validation, one-signature launch detector, exact 60/40 allocation, both Pump fee collection paths, Token-2022 transfer-hook support, a mint-wide holder indexer, restart-safe automatic payout batches, RPC-consensus guards and private control surface
 
 The old Robinhood Chain implementation is retained only as legacy audit history. Its addresses, manifests, cached epochs and bot state are not valid Solana production configuration
 
@@ -116,7 +116,7 @@ npm run web:dev
 | Path | Purpose |
 |:--|:--|
 | `services/solana/` | Fixed 2% launch validation, finalized RPC consensus, Pump MSTRx collection, 60/40 routing and automatic transfer accounting |
-| `services/indexer/` | Deterministic hold-time and reward accounting primitives being ported to Solana history |
+| `services/indexer/` | Shared deterministic hold-time and reward-accounting primitives |
 | `services/api/` | Public site server and wallet-signed private control queue |
 | `apps/web/` | Solana holder website, documentation, governance preview and owner panel |
 | `config/solana-mainnet.json` | Public Solana programs, assets and approved economics |
@@ -129,6 +129,8 @@ Secrets are not stored in this repository
 Private keys, seed phrases, RPC credentials, server passwords, SSH keys, hidden administration URLs and live operational state must remain outside Git
 
 `npm run security:secrets` scans every publishable file before a public push
+
+Provider setup and the remaining mainnet sign-off are documented in [`docs/solana-provider-setup.md`](docs/solana-provider-setup.md) and [`docs/production-handoff.md`](docs/production-handoff.md)
 
 ---
 

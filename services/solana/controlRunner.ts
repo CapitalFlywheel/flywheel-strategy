@@ -2,14 +2,16 @@ import "dotenv/config";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { bondingCurvePda, bondingCurveV2Pda, canonicalPumpPoolPda, canonicalPumpPoolPdaWithQuote, pumpPoolAuthorityPda } from "@pump-fun/pump-sdk";
 import { ExtensionType, getAccount, getExtensionTypes, getMint, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
-import { buildCustomQuoteCreatorFeeSweepPlan, readCustomQuoteCreatorFeeBalances } from "./pumpFees";
 import { verifyFixedMstrxPumpLaunch } from "./launchVerifier";
-import { detectCreatorPumpLaunch } from "./launchDetector";
-import { createMstrxAtaInstruction, createMstrxTransfer, mstrxAta, splitMstrx60_40 } from "./mstrxTransfers";
+import { detectAgreedCreatorPumpLaunch } from "./launchDetector";
+import { createMstrxAtaInstruction, mstrxAta } from "./mstrxTransfers";
 import { finalizedConsensus, requireMatchingValues } from "./rpcConsensus";
 import { distributeRewardEpoch, finalizeRewardEpoch, loadCurrentRewardPlan, prepareRewardEpoch, type RewardPipelineEnvironment } from "./rewardPipeline";
 import { loadKeypair, simulateAndSend } from "./transactions";
+import { reconcilePendingFeeReceipt, recoverUncommittedCreatorFees, sweepCreatorFees, type FeeSettlementEnvironment } from "./feeSettlement";
+import { writeDurableJson } from "./durableJson";
 
 interface ControlRequest { id: string; network: string; action: string; signer: string; requestedAt: number }
 interface ControlStatus {
@@ -38,13 +40,36 @@ function required(name: string) {
 function rpcUrls() { return [required("SOLANA_RPC_PRIMARY_URL"), required("SOLANA_RPC_FALLBACK_URL")]; }
 function mstrxMint() { return new PublicKey(required("SOLANA_MSTRX_MINT")); }
 
+function feeEnvironment(status: ControlStatus): FeeSettlementEnvironment {
+  return {
+    rpcUrls: rpcUrls() as [string, string],
+    stateRoot: resolve(process.env.SOLANA_STATE_ROOT || "data/solana"),
+    projectMint: status.launch.detectedMint || required("SOLANA_CAPITAL_MINT"),
+    mint: required("SOLANA_MSTRX_MINT"),
+    creator: required("SOLANA_CREATOR_PUBLIC_KEY"),
+    holder: required("SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY"),
+    reserve: required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"),
+    recovery: required("SOLANA_RECOVERY_PUBLIC_KEY"),
+    creatorKeypairPath: required("SOLANA_CREATOR_KEYPAIR_PATH"),
+    operatorKeypairPath: required("SOLANA_OPERATOR_KEYPAIR_PATH"),
+    minimumSweepRaw: BigInt(process.env.SOLANA_MIN_SWEEP_RAW_MSTRX || "10000"),
+  };
+}
+
 function rewardEnvironment(status: ControlStatus): RewardPipelineEnvironment {
+  const capitalMint = new PublicKey(status.launch.detectedMint || required("SOLANA_CAPITAL_MINT"));
+  const quoteMint = mstrxMint();
   const excluded = [
     required("SOLANA_CREATOR_PUBLIC_KEY"),
     required("SOLANA_OPERATOR_PUBLIC_KEY"),
     required("SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY"),
     required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"),
     required("SOLANA_RECOVERY_PUBLIC_KEY"),
+    bondingCurvePda(capitalMint).toBase58(),
+    bondingCurveV2Pda(capitalMint).toBase58(),
+    canonicalPumpPoolPda(capitalMint).toBase58(),
+    canonicalPumpPoolPdaWithQuote(capitalMint, quoteMint).toBase58(),
+    pumpPoolAuthorityPda(capitalMint).toBase58(),
     ...(process.env.SOLANA_EXCLUDED_HOLDER_ADDRESSES || "").split(",").map((value) => value.trim()).filter(Boolean),
   ];
   return {
@@ -52,7 +77,7 @@ function rewardEnvironment(status: ControlStatus): RewardPipelineEnvironment {
     stateRoot: resolve(process.env.SOLANA_STATE_ROOT || "data/solana"),
     publicDataRoot: resolve(process.env.PUBLIC_DATA_ROOT || "data/public"),
     journalPath: resolve(required("SOLANA_HOLDER_JOURNAL_PATH")),
-    capitalMint: status.launch.detectedMint || required("SOLANA_CAPITAL_MINT"),
+    capitalMint: capitalMint.toBase58(),
     mstrxMint: required("SOLANA_MSTRX_MINT"),
     operatorKeypairPath: required("SOLANA_OPERATOR_KEYPAIR_PATH"),
     holderKeypairPath: required("SOLANA_HOLDER_SETTLEMENT_KEYPAIR_PATH"),
@@ -62,15 +87,16 @@ function rewardEnvironment(status: ControlStatus): RewardPipelineEnvironment {
 }
 
 async function readStatus(): Promise<ControlStatus> {
-  try { return JSON.parse(await readFile(statusPath, "utf8")) as ControlStatus; } catch {
+  try { return JSON.parse(await readFile(statusPath, "utf8")) as ControlStatus; }
+  catch (error) {
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") throw error;
     return { network: "solana-mainnet-beta", automationState: "stopped", launch: { configured: false, armed: false, activated: false }, services: {}, balances: {}, conversionsPaused: false, updatedAt: 0 };
   }
 }
 
 async function saveStatus(status: ControlStatus) {
   status.updatedAt = Date.now();
-  await mkdir(controlRoot, { recursive: true });
-  await writeFile(statusPath, JSON.stringify(status, null, 2), { encoding: "utf8", mode: 0o600 });
+  await writeDurableJson(statusPath, status);
 }
 
 async function saveHeartbeat(service: string, ok: boolean, detail?: string) {
@@ -79,25 +105,26 @@ async function saveHeartbeat(service: string, ok: boolean, detail?: string) {
   await writeFile(resolve(root, `${service}.json`), JSON.stringify({ service, ok, updatedAt: Date.now(), ...(detail ? { detail } : {}) }, null, 2), { encoding: "utf8", mode: 0o644, flush: true });
 }
 
-async function publishRuntimeConfig(status: ControlStatus, launchedAtSlot?: number) {
-  if (!status.launch.detectedMint) throw new Error("DETECTED_MINT_REQUIRED");
+async function publishRuntimeConfig(status: ControlStatus, launchedAtSlot: number) {
+  if (!status.launch.detectedMint || !status.launch.detectedSignature) throw new Error("DETECTED_LAUNCH_REQUIRED");
   const mint = mstrxMint();
   const holder = new PublicKey(required("SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY"));
   const reserve = new PublicKey(required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"));
   const config = {
     network: "solana-mainnet-beta",
     projectMint: status.launch.detectedMint,
+    launchedAtSignature: status.launch.detectedSignature,
     mstrxMint: mint.toBase58(),
     creatorFeeRecipient: required("SOLANA_CREATOR_PUBLIC_KEY"),
     rewardVaultTokenAccount: mstrxAta(holder, mint).toBase58(),
     reserveVaultTokenAccount: mstrxAta(reserve, mint).toBase58(),
     ...(process.env.SOLANA_GOVERNANCE_PROGRAM?.trim() ? { governanceProgram: process.env.SOLANA_GOVERNANCE_PROGRAM.trim() } : {}),
     ...(process.env.SOLANA_MARKETING_PUBLIC_KEY?.trim() ? { marketingWallet: process.env.SOLANA_MARKETING_PUBLIC_KEY.trim() } : {}),
-    ...(launchedAtSlot === undefined ? {} : { launchedAtSlot }),
+    launchedAtSlot,
   };
   const root = resolve(process.env.PUBLIC_DATA_ROOT || "data/public");
   await mkdir(root, { recursive: true });
-  await writeFile(resolve(root, "config.json"), JSON.stringify(config, null, 2), { encoding: "utf8", mode: 0o644, flush: true });
+  await writeDurableJson(resolve(root, "config.json"), config);
 }
 
 async function rawMstrxBalance(connection: Connection, owner: PublicKey) {
@@ -111,15 +138,14 @@ async function verifyPrelaunch(status: ControlStatus) {
   const creator = await loadKeypair(required("SOLANA_CREATOR_KEYPAIR_PATH"));
   const operator = await loadKeypair(required("SOLANA_OPERATOR_KEYPAIR_PATH"));
   const holder = await loadKeypair(required("SOLANA_HOLDER_SETTLEMENT_KEYPAIR_PATH"));
-  const reserve = await loadKeypair(required("SOLANA_RESERVE_SETTLEMENT_KEYPAIR_PATH"));
+  const reserve = new PublicKey(required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"));
   const recovery = new PublicKey(required("SOLANA_RECOVERY_PUBLIC_KEY"));
   if (!creator.publicKey.equals(new PublicKey(required("SOLANA_CREATOR_PUBLIC_KEY")))) throw new Error("CREATOR_KEYPAIR_MISMATCH");
   const expectedOperator = process.env.SOLANA_OPERATOR_PUBLIC_KEY?.trim();
   if (expectedOperator && !operator.publicKey.equals(new PublicKey(expectedOperator))) throw new Error("OPERATOR_KEYPAIR_MISMATCH");
   if (!holder.publicKey.equals(new PublicKey(required("SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY")))) throw new Error("HOLDER_KEYPAIR_MISMATCH");
-  if (!reserve.publicKey.equals(new PublicKey(required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY")))) throw new Error("RESERVE_KEYPAIR_MISMATCH");
-  if (holder.publicKey.equals(reserve.publicKey) || holder.publicKey.equals(recovery) || reserve.publicKey.equals(recovery)) throw new Error("OPERATIONAL_DESTINATION_DUPLICATE");
-  if ([creator.publicKey, operator.publicKey, holder.publicKey, reserve.publicKey].some((key) => key.equals(owner))) throw new Error("OPERATIONAL_ROLE_NOT_ISOLATED");
+  if (holder.publicKey.equals(reserve) || holder.publicKey.equals(recovery) || reserve.equals(recovery)) throw new Error("OPERATIONAL_DESTINATION_DUPLICATE");
+  if ([creator.publicKey, operator.publicKey, holder.publicKey, reserve].some((key) => key.equals(owner))) throw new Error("OPERATIONAL_ROLE_NOT_ISOLATED");
 
   const snapshots = await Promise.all(urls.map(async (url) => {
     const mint = await getMint(new Connection(url, "finalized"), mstrxMint(), "finalized", TOKEN_2022_PROGRAM_ID);
@@ -153,62 +179,25 @@ async function ensureFeeAtas(connection: Connection) {
   });
 }
 
-async function routeCreatorMstrx(connection: Connection, rawAmount: bigint) {
-  const operator = await loadKeypair(required("SOLANA_OPERATOR_KEYPAIR_PATH"));
-  const creator = await loadKeypair(required("SOLANA_CREATOR_KEYPAIR_PATH"));
-  const holder = new PublicKey(required("SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY"));
-  const reserve = new PublicKey(required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"));
-  const available = await rawMstrxBalance(connection, creator.publicKey);
-  if (rawAmount > available) throw new Error("COLLECTED_MSTRX_BALANCE_MISMATCH");
-  const split = splitMstrx60_40(rawAmount);
-  const holderTransfer = await createMstrxTransfer({ connection, sourceOwner: creator.publicKey, destinationOwner: holder, mint: mstrxMint(), rawAmount: split.holderRaw });
-  const reserveTransfer = await createMstrxTransfer({ connection, sourceOwner: creator.publicKey, destinationOwner: reserve, mint: mstrxMint(), rawAmount: split.reserveRaw });
-  const signature = await simulateAndSend({ connection, payer: operator, additionalSigners: [creator], instructions: [holderTransfer, reserveTransfer] });
-  return { ...split, signature };
-}
-
 async function executeFeeSweep(status: ControlStatus, phase: "curve" | "pumpswap") {
   if (!status.launch.activated || status.conversionsPaused) throw new Error("AUTOMATION_NOT_ACTIVE");
-  const connection = new Connection(required("SOLANA_RPC_PRIMARY_URL"), "confirmed");
-  const operator = await loadKeypair(required("SOLANA_OPERATOR_KEYPAIR_PATH"));
+  const connection = new Connection(required("SOLANA_RPC_PRIMARY_URL"), "finalized");
   const ataSignature = await ensureFeeAtas(connection);
-  const beforeRaw = await rawMstrxBalance(connection, new PublicKey(required("SOLANA_CREATOR_PUBLIC_KEY")));
-  const vaults = await readCustomQuoteCreatorFeeBalances({
-    rpcUrl: required("SOLANA_RPC_PRIMARY_URL"),
-    creator: required("SOLANA_CREATOR_PUBLIC_KEY"),
-    quoteMint: required("SOLANA_MSTRX_MINT"),
-    quoteTokenProgram: TOKEN_2022_PROGRAM_ID.toBase58(),
-  });
-  const pendingRaw = phase === "curve" ? vaults.curveRaw : vaults.pumpSwapRaw;
-  const minimumRaw = BigInt(process.env.SOLANA_MIN_SWEEP_RAW_MSTRX || "10000");
-  if (pendingRaw < minimumRaw) return false;
-  const plan = await buildCustomQuoteCreatorFeeSweepPlan({
-    rpcUrl: required("SOLANA_RPC_PRIMARY_URL"),
-    creator: required("SOLANA_CREATOR_PUBLIC_KEY"),
-    quoteMint: required("SOLANA_MSTRX_MINT"),
-    quoteTokenProgram: TOKEN_2022_PROGRAM_ID.toBase58(),
-    feePayer: operator.publicKey.toBase58(),
-  });
-  const instructions = phase === "curve" ? plan.curve : plan.pumpSwap;
-  if (!instructions.length) throw new Error("NO_SWEEP_INSTRUCTION_AVAILABLE");
-  const collectionSignature = await simulateAndSend({ connection, payer: operator, instructions });
-  const afterRaw = await rawMstrxBalance(connection, new PublicKey(required("SOLANA_CREATOR_PUBLIC_KEY")));
-  const collectedRaw = afterRaw - beforeRaw;
-  if (collectedRaw <= 0n || collectedRaw > pendingRaw) throw new Error("PUMP_COLLECTION_DELTA_INVALID");
-  const routed = await routeCreatorMstrx(connection, collectedRaw);
+  const result = await sweepCreatorFees(feeEnvironment(status), phase);
+  if (!result.changed && !result.receipt) return false;
   status.balances.creatorMstrxRaw = (await rawMstrxBalance(connection, new PublicKey(required("SOLANA_CREATOR_PUBLIC_KEY")))).toString();
   status.balances.holderMstrxRaw = (await rawMstrxBalance(connection, new PublicKey(required("SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY")))).toString();
   status.balances.reserveMstrxRaw = (await rawMstrxBalance(connection, new PublicKey(required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY")))).toString();
   status.services["solana-fee-keeper"] = {
     ok: true,
     updatedAt: Date.now(),
-    detail: `${phase}:ata=${ataSignature ?? "existing"}:collect=${collectionSignature}:route=${routed.signature}:gross=${routed.grossRaw}:holder=${routed.holderRaw}:reserve=${routed.reserveRaw}`,
+    detail: `${result.receipt?.phase ?? phase}:ata=${ataSignature ?? "existing"}:collect=${result.receipt?.collection.signature}:state=${result.receipt?.state}:gross=${result.receipt?.collectedRaw ?? "pending"}:holder=${result.receipt?.holderRaw ?? "pending"}:reserve=${result.receipt?.reserveRaw ?? "pending"}`,
   };
   await saveHeartbeat("solana-fee-keeper", true, status.services["solana-fee-keeper"].detail);
-  return true;
+  return result.changed;
 }
 
-async function activateLaunch(status: ControlStatus, mint: string, slot?: number, signature?: string) {
+async function activateLaunch(status: ControlStatus, mint: string, slot: number, signature: string) {
   const facts = await verifyFixedMstrxPumpLaunch({
     rpcUrls: rpcUrls(),
     mint,
@@ -228,8 +217,8 @@ async function activateLaunch(status: ControlStatus, mint: string, slot?: number
 
 async function automaticLaunchTick(status: ControlStatus) {
   if (!status.launch.armed || status.launch.activated || !status.launch.armedAt) return false;
-  const candidate = await detectCreatorPumpLaunch({
-    rpcUrl: required("SOLANA_RPC_PRIMARY_URL"),
+  const candidate = await detectAgreedCreatorPumpLaunch({
+    rpcUrls: rpcUrls() as [string, string],
     creator: required("SOLANA_CREATOR_PUBLIC_KEY"),
     armedAtMs: status.launch.armedAt,
   });
@@ -257,6 +246,11 @@ async function automaticRewardTick(status: ControlStatus) {
   }
 
   if (current?.finalized) {
+    if (status.rewardEpochOwnsPause) {
+      status.conversionsPaused = false;
+      status.rewardEpochOwnsPause = false;
+      await saveStatus(status);
+    }
     let journal: { epochId: string };
     try {
       journal = JSON.parse(await readFile(environment.journalPath, "utf8")) as { epochId: string };
@@ -272,6 +266,7 @@ async function automaticRewardTick(status: ControlStatus) {
     try {
       if (!status.conversionsPaused) { status.conversionsPaused = true; status.rewardEpochOwnsPause = true; }
       current = await prepareRewardEpoch(environment);
+      await saveStatus(status);
       status.services["solana-reward-publisher"] = { ok: true, updatedAt: Date.now(), detail: `prepared epoch ${current.epochId}:${current.planHash}` };
       await saveHeartbeat("solana-reward-publisher", true, status.services["solana-reward-publisher"].detail);
     } catch (error) {
@@ -282,12 +277,17 @@ async function automaticRewardTick(status: ControlStatus) {
   } else if (!status.conversionsPaused) {
     status.conversionsPaused = true;
     status.rewardEpochOwnsPause = true;
+    await saveStatus(status);
   }
 
   const distributed = await distributeRewardEpoch(environment);
   const confirmed = distributed.batches.filter((batch) => batch.state === "confirmed").length;
   status.services["solana-distributor"] = { ok: true, updatedAt: Date.now(), detail: `epoch ${distributed.epochId}:${confirmed}/${distributed.batches.length} batches` };
   await saveHeartbeat("solana-distributor", true, status.services["solana-distributor"].detail);
+  if (confirmed !== distributed.batches.length) {
+    await saveStatus(status);
+    return false;
+  }
   const finalized = await finalizeRewardEpoch(environment);
   status.services["solana-distributor"] = { ok: true, updatedAt: Date.now(), detail: `finalized epoch ${finalized.epochId}:${finalized.fundedRawMstrx} raw MSTRx` };
   await saveHeartbeat("solana-distributor", true, status.services["solana-distributor"].detail);
@@ -297,16 +297,10 @@ async function automaticRewardTick(status: ControlStatus) {
 
 async function recoverCreatorMstrx(status: ControlStatus) {
   if (!status.conversionsPaused) throw new Error("PAUSE_REQUIRED");
-  const connection = new Connection(required("SOLANA_RPC_PRIMARY_URL"), "confirmed");
-  const operator = await loadKeypair(required("SOLANA_OPERATOR_KEYPAIR_PATH"));
-  const creator = await loadKeypair(required("SOLANA_CREATOR_KEYPAIR_PATH"));
-  const recovery = new PublicKey(required("SOLANA_RECOVERY_PUBLIC_KEY"));
-  await ensureFeeAtas(connection);
-  const amount = await rawMstrxBalance(connection, creator.publicKey);
-  const transfer = await createMstrxTransfer({ connection, sourceOwner: creator.publicKey, destinationOwner: recovery, mint: mstrxMint(), rawAmount: amount });
-  const signature = await simulateAndSend({ connection, payer: operator, additionalSigners: [creator], instructions: [transfer] });
-  status.balances.creatorMstrxRaw = "0";
-  status.services["solana-fee-keeper"] = { ok: true, updatedAt: Date.now(), detail: `recovered-uncommitted:${amount}:${signature}` };
+  await ensureFeeAtas(new Connection(required("SOLANA_RPC_PRIMARY_URL"), "confirmed"));
+  const result = await recoverUncommittedCreatorFees(feeEnvironment(status));
+  status.balances.creatorMstrxRaw = (await rawMstrxBalance(new Connection(required("SOLANA_RPC_PRIMARY_URL"), "finalized"), new PublicKey(required("SOLANA_CREATOR_PUBLIC_KEY")))).toString();
+  status.services["solana-fee-keeper"] = { ok: true, updatedAt: Date.now(), detail: `recover-uncommitted:${result.amount}:${result.signature ?? "pending"}:${result.pending ? "pending" : "finalized"}` };
 }
 
 async function dispatch(request: ControlRequest, status: ControlStatus) {
@@ -316,14 +310,30 @@ async function dispatch(request: ControlRequest, status: ControlStatus) {
     case "arm_launch_detection": if (!status.launch.configured) throw new Error("LAUNCH_NOT_CONFIGURED"); status.launch.armed = true; status.launch.armedAt = Date.now(); break;
     case "disarm_launch_detection": status.launch.armed = false; status.launch.armedAt = undefined; break;
     case "activate_postlaunch": {
-      if (!status.launch.armed) throw new Error("DETECTOR_NOT_ARMED");
-      await activateLaunch(status, status.launch.detectedMint || required("SOLANA_CAPITAL_MINT"));
+      if (!status.launch.armed || !status.launch.armedAt) throw new Error("DETECTOR_NOT_ARMED");
+      const candidate = await detectAgreedCreatorPumpLaunch({
+        rpcUrls: rpcUrls() as [string, string],
+        creator: required("SOLANA_CREATOR_PUBLIC_KEY"),
+        armedAtMs: status.launch.armedAt,
+      });
+      if (!candidate) throw new Error("PUMP_LAUNCH_NOT_FINALIZED");
+      await activateLaunch(status, candidate.mint, candidate.slot, candidate.signature);
       break;
     }
     case "sweep_curve_fees": await executeFeeSweep(status, "curve"); break;
     case "sweep_pumpswap_fees": await executeFeeSweep(status, "pumpswap"); break;
     case "pause_conversions": status.conversionsPaused = true; break;
-    case "resume_conversions": if (!status.launch.configured) throw new Error("LAUNCH_NOT_CONFIGURED"); status.conversionsPaused = false; break;
+    case "reconcile_fee_receipts": {
+      if (!status.conversionsPaused) throw new Error("PAUSE_REQUIRED");
+      const result = await reconcilePendingFeeReceipt(feeEnvironment(status));
+      status.services["solana-fee-keeper"] = { ok: !result.pending, updatedAt: Date.now(), detail: result.signature ? `${result.signature}:${result.state}` : "no pending receipts" };
+      break;
+    }
+    case "resume_conversions":
+      if (!status.launch.configured) throw new Error("LAUNCH_NOT_CONFIGURED");
+      await finalizedConsensus(rpcUrls());
+      status.conversionsPaused = false;
+      break;
     case "recover_uncommitted": await recoverCreatorMstrx(status); break;
     case "prepare_reward_epoch": {
       if (!status.launch.activated) throw new Error("AUTOMATION_NOT_ACTIVE");

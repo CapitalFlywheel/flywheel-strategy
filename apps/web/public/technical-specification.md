@@ -43,7 +43,7 @@ Eligible holders receive funded MSTRx directly in their wallets
 
 No claim page, website connection, holder signature or holder-paid gas is required
 
-Each epoch follows this sequence
+Each funded epoch follows this sequence
 
 1. Confirm creator-fee receipts across two independent RPC providers
 2. Allocate the raw MSTRx receipts 60/40 without losing a raw unit
@@ -65,7 +65,7 @@ holder reward = funded epoch × holder weight ÷ total eligible weight
 
 Partial sales consume newest lots first. Pump curve custody, PumpSwap custody, vaults, program accounts, burn accounts and project operational wallets are excluded
 
-The final dust threshold and rollover rule will be published before the first mainnet epoch
+Raw-unit remainders are assigned deterministically by largest remainder. A wallet whose calculated share is zero raw MSTRx units receives no transfer in that epoch
 
 ## Strategic reserve
 

@@ -20,20 +20,21 @@ const actionGroups = [
   {
     title: "Launch control",
     actions: [
-      ["verify_launch_config", "Verify launch configuration", "Checks creator key, MSTRx custom pair, Token-2022 extensions and RPC consensus"],
+      ["verify_launch_config", "Verify pre-launch configuration", "Checks wallet roles, official MSTRx mint extensions and RPC consensus · Actual Pump settings are checked after token creation"],
       ["arm_launch_detection", "Arm automatic Pump.fun launch", "One pre-launch signature watches the approved creator, verifies one exact mint and activates it automatically"],
       ["disarm_launch_detection", "Disarm detection", "Stops launch discovery without changing any balances"],
-      ["activate_postlaunch", "Emergency manual activation", "Fallback only when automatic activation was interrupted after the verified mint was detected"],
+      ["activate_postlaunch", "Retry verified activation", "Re-runs the same two-RPC Pump create-event detection and validation if automatic activation was interrupted"],
     ],
   },
   {
     title: "Fee custody",
     actions: [
-      ["sweep_curve_fees", "Route bonding-curve fees", "Collects the fixed 2% MSTRx creator fee and allocates only the confirmed receipt delta 60/40"],
+      ["sweep_curve_fees", "Route bonding-curve fees", "Collects creator fees and allocates only the finalized MSTRx receipt delta 60/40"],
       ["sweep_pumpswap_fees", "Route PumpSwap fees", "Collects post-graduation MSTRx creator fees and applies the same exact 60/40 split"],
-      ["pause_conversions", "Pause fee routing", "Stops new fee routing and new reward commitments immediately"],
+      ["pause_conversions", "Pause fee routing", "Stops new fee collections and routing · Already signed transactions may still finalize"],
+      ["reconcile_fee_receipts", "Reconcile pending fee transaction", "While paused, checks a previously signed collection or route without starting a new route"],
       ["resume_conversions", "Resume fee routing", "Resumes only after configuration and RPC checks pass"],
-      ["recover_uncommitted", "Recover uncommitted MSTRx", "Moves only MSTRx still held by the creator wallet and not assigned to an epoch"],
+      ["recover_uncommitted", "Recover uncommitted MSTRx", "Moves only finalized collected receipts still unrouted in the creator wallet"],
     ],
   },
   {

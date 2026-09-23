@@ -7,10 +7,11 @@ The current production stack uses one constrained Solana control runner with sep
 - `solana-fee-keeper` verifies and sweeps both Pump creator-fee sources and routes the received MSTRx 60/40
 - `solana-reward-publisher` builds finalized holder state and commits a fully funded reward epoch
 - `solana-distributor` sends idempotent MSTRx batches and finalizes exact conservation
+- `solana-holder-indexer` discovers CAPITAL transfers by mint, verifies each newly seen finalized transaction against both RPC providers and prepares the holder journal
 - `solana-launch-detector` binds and activates the one exact Pump launch created after the signed arm timestamp
 - `solana-governance-keeper` remains disabled until a restricted governance program is reviewed and deployed
 
-No service stores the owner private key. The isolated creator, operator, holder-settlement and reserve service keys are installed outside Git with file-level access restrictions
+No service stores the owner private key. The creator, operator and holder-settlement service keys are installed outside Git with file-level access restrictions. The reserve and recovery wallets provide public addresses only; their private keys are not needed on the server
 
 ## Required secret environment
 
@@ -23,16 +24,21 @@ SOLANA_ADMIN_OWNER=
 SOLANA_CREATOR_PUBLIC_KEY=
 SOLANA_CREATOR_KEYPAIR_PATH=
 SOLANA_OPERATOR_KEYPAIR_PATH=
+SOLANA_OPERATOR_PUBLIC_KEY=
 SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY=
 SOLANA_HOLDER_SETTLEMENT_KEYPAIR_PATH=
 SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY=
-SOLANA_RESERVE_SETTLEMENT_KEYPAIR_PATH=
 SOLANA_HOLDER_JOURNAL_PATH=
 SOLANA_RECOVERY_PUBLIC_KEY=
+BITQUERY_API_KEY=
 ADMIN_PANEL_PATH=
 ```
 
-Keypair files must be readable only by their dedicated service account. The public website receives only public addresses and sanitized status files
+Keypair files must be readable only by their dedicated service account. The public website receives only the public admin address and sanitized status files; `web` must not load `.env.solana`
+
+`SOLANA_RPC_PRIMARY_URL` is intended for a private Solana Mainnet Alchemy app. `SOLANA_RPC_FALLBACK_URL` must come from an independent provider such as Helius, not another app at Alchemy. Keep both authenticated URLs server-side. The browser may use the public Solana RPC only for non-critical wallet reads
+
+The current mint-wide transfer discovery adapter uses Bitquery V2 `Solana(dataset: realtime)` and a protected `BITQUERY_API_KEY`. It re-reads an overlapping hour, verifies newly discovered signatures against both RPCs, and fails if a previously indexed transfer disappears. Bitquery's realtime transfer history has short retention; a gap longer than six hours stops distribution and requires a verified historical backfill. Do not restart from an incomplete index, use `getSignaturesForAddress(mint)` as a substitute, or infer a reward epoch from a current holder snapshot
 
 ## Funding
 
@@ -54,6 +60,8 @@ Automation must remain stopped until all checks pass
 8. Recovery tests prove that committed holder inventory cannot be swept
 9. Public documentation matches deployed behavior
 10. Secret scan, tests and web build pass
+11. Mint-wide transfer discovery covers the creation transaction and all transfers through the finalized checkpoint, with no retention gap
+12. The reserve and recovery addresses are controlled by the project; no reserve private key is installed on the server
 
 ## Runtime rules
 
@@ -66,13 +74,17 @@ Automation must remain stopped until all checks pass
 - Fund a complete epoch before its first payout
 - Persist signature and batch state before advancing
 - Retry expired transactions with the same logical batch identifier
+- Keep signed fee collections and routes in durable state; reconcile exact MSTRx token-account deltas before progressing
+- Recheck both RPCs before retrying an expired transaction, and never repeat a finalized fee collection or holder payout
 - Keep the public site online while automation is paused
 
 ## Incident response
 
-The private panel provides separate controls to pause routing, sweep either fee source, inspect balances, resume routing and recover only uncommitted project-controlled MSTRx
+The private panel provides separate controls to pause routing, reconcile an in-flight signed transaction while paused, sweep either fee source, inspect balances, resume routing and recover only uncommitted project-controlled MSTRx
 
 If a provider, mint, creator, transfer hook or balance disagrees, the correct response is to stop and preserve state. The system must not silently switch assets or reinterpret a failed transaction as a receipt
+
+If the transfer source is unavailable or its realtime retention is exceeded, fee collection may continue, but holder epochs and payouts must remain stopped until a complete historical repair has been verified. Backup `data/solana`, `data/control`, and the protected service keypairs off-server before activation and after each finalized epoch
 
 ## Deployment verification
 

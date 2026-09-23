@@ -35,6 +35,7 @@
     "keeper:rewards": "tsx services/keeper/rewardKeeper.ts",
     "keeper:publisher": "tsx services/keeper/rewardPublisher.ts",
     "solana:control-runner": "tsx services/solana/controlRunner.ts",
+    "solana:holder-indexer": "tsx services/solana/holderIndexerRunner.ts",
     "security:secrets": "node scripts/check-public-secrets.mjs",
     "web:dev": "vite --config apps/web/vite.config.ts",
     "web:build": "vite build --config apps/web/vite.config.ts",

@@ -16,18 +16,19 @@ The owner private key stays in Phantom, Solflare, Backpack or another Solana Wal
 
 ## Launch actions
 
-- Verify the exact Pump.fun launch configuration
+- Verify pre-launch wallet roles, RPC consensus and MSTRx asset properties
 - Arm detection for one coin created by the approved creator
 - Disarm detection without changing balances
 - Automatic activation of only the independently verified detected mint
 
-The intended Pump.fun configuration is a custom pair with the official MSTRx quote mint, native Pump holder rewards disabled and a fixed creator fee of 200 basis points
+The intended Pump.fun configuration is a custom pair with the official MSTRx quote mint, native Pump holder rewards disabled and a fixed creator fee of 200 basis points. The actual coin fields are verified only after Pump creates the mint; the pre-launch button cannot prove the future coin's settings
 
 ## Fee actions
 
 - Sweep bonding-curve creator fees
 - Sweep PumpSwap creator fees
-- Pause new fee routing and commitments
+- Pause fee collection and routing
+- While paused, reconcile an already signed collection or route without creating a new fee transaction
 - Resume after configuration and RPC consensus checks
 - Recover only uncommitted project-controlled balances
 
@@ -47,10 +48,10 @@ Each action has its own button and progress record. A generic multi-step signatu
 
 1. Install production RPC and service secrets outside Git
 2. Connect the configured owner wallet to the private panel
-3. Verify creator, official MSTRx quote, fixed 2% fee, Pump programs and both RPC providers
+3. Verify creator and operational wallet roles, official MSTRx mint and both RPC providers
 4. Arm detection immediately before the real launch
 5. Create CAPITAL on Pump.fun with the MSTRx custom pair, `creatorFeeBps: 200`, `holderReward: false` and creator rewards sent to the configured dev wallet
-6. Let the detector bind, verify and activate the one mint created by the approved creator without another owner signature
+6. Let the detector verify the actual MSTRx quote, fixed 2% fee and disabled native holder rewards, then activate only that mint without another owner signature
 7. Review the detected mint and the live service status in the panel
 8. Confirm the first real MSTRx creator-fee receipt through the complete sweep, 60/40 allocation and automatic payout path
 

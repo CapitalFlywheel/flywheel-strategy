@@ -1,5 +1,6 @@
 import { PUMP_SDK } from "@pump-fun/pump-sdk";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { requireMatchingValues } from "./rpcConsensus";
 
 export interface PumpCreateCandidate {
   signature: string;
@@ -21,7 +22,7 @@ export function selectArmedLaunchCandidate(args: {
 }) {
   const creator = new PublicKey(args.creator).toBase58();
   const candidates = args.candidates.filter((candidate) => (
-    candidate.creator === creator && candidate.blockTime * 1_000 >= args.armedAtMs
+    candidate.creator === creator && candidate.blockTime >= Math.floor(args.armedAtMs / 1_000)
   ));
   if (candidates.length > 1) throw new Error("MULTIPLE_PUMP_LAUNCHES_AFTER_ARM");
   return candidates[0];
@@ -63,16 +64,30 @@ export async function detectCreatorPumpLaunch(args: {
   creator: string;
   armedAtMs: number;
   limit?: number;
+  maxPages?: number;
 }) {
   const connection = new Connection(args.rpcUrl, "finalized");
-  const signatures = await connection.getSignaturesForAddress(
-    new PublicKey(args.creator),
-    { limit: args.limit ?? 100 },
-    "finalized",
-  );
-  const eligible = signatures.filter((entry): entry is typeof entry & { blockTime: number } => (
-    !entry.err && typeof entry.blockTime === "number" && entry.blockTime * 1_000 >= args.armedAtMs
-  ));
+  const eligible: Array<{ signature: string; blockTime: number }> = [];
+  const pageSize = args.limit ?? 1_000;
+  const maxPages = args.maxPages ?? 20;
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 1_000 || !Number.isInteger(maxPages) || maxPages < 1 || maxPages > 100) throw new Error("PUMP_LAUNCH_SCAN_BOUNDS_INVALID");
+  let before: string | undefined;
+  let reachedArmBoundary = false;
+  let reachedHistoryEnd = false;
+  for (let page = 0; page < maxPages; page += 1) {
+    const signatures = await connection.getSignaturesForAddress(new PublicKey(args.creator), { limit: pageSize, before }, "finalized");
+    for (const entry of signatures) {
+      if (typeof entry.blockTime === "number" && entry.blockTime < Math.floor(args.armedAtMs / 1_000)) {
+        reachedArmBoundary = true;
+        break;
+      }
+      if (!entry.err && typeof entry.blockTime === "number") eligible.push({ signature: entry.signature, blockTime: entry.blockTime });
+    }
+    if (reachedArmBoundary) break;
+    if (signatures.length < pageSize) { reachedHistoryEnd = true; break; }
+    before = signatures.at(-1)?.signature;
+  }
+  if (!reachedArmBoundary && !reachedHistoryEnd) throw new Error("PUMP_LAUNCH_SCAN_LIMIT");
   const transactions = await Promise.all(eligible.map(async (entry) => {
     const transaction = await connection.getTransaction(entry.signature, {
       commitment: "finalized",
@@ -91,4 +106,16 @@ export async function detectCreatorPumpLaunch(args: {
     creator: args.creator,
     armedAtMs: args.armedAtMs,
   });
+}
+
+export async function detectAgreedCreatorPumpLaunch(args: {
+  rpcUrls: readonly [string, string];
+  creator: string;
+  armedAtMs: number;
+}) {
+  const candidates = await Promise.all(args.rpcUrls.map((rpcUrl) => detectCreatorPumpLaunch({
+    rpcUrl, creator: args.creator, armedAtMs: args.armedAtMs,
+  })));
+  if (candidates.some((candidate) => !candidate)) return undefined;
+  return requireMatchingValues(candidates as PumpCreateCandidate[], "PUMP_LAUNCH_RPC_DISAGREEMENT");
 }

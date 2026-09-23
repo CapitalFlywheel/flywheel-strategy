@@ -24,9 +24,9 @@ Live wallet and program addresses are absent until verified. No placeholder addr
 
 `services/solana/pumpFees.ts` uses the official Pump SDK V2 creator-fee instructions for a non-SOL quote, spanning the bonding-curve and PumpSwap paths
 
-The operational runner must independently verify the creator, coin mint, quote mint, fee phase and destination before simulating or signing a collection transaction. Allocation uses the confirmed creator-account balance delta from that collection rather than sweeping the wallet's unrelated MSTRx
+The operational runner verifies the creator, coin mint, quote mint, fee phase and destination before simulating or signing a collection transaction. It saves each signed collection to a durable receipt ledger before broadcast, then allocates the exact finalized creator-account MSTRx balance delta instead of sweeping the wallet's unrelated MSTRx
 
-The launch detector watches the approved creator only after the owner's one-time arm timestamp. It decodes the Pump create event, fails closed on multiple launches and activates only after two-provider verification of the mint, MSTRx quote, Token-2022 program, fixed 200 bps fee and disabled native holder rewards
+The launch detector watches the approved creator only after the owner's one-time arm timestamp. It paginates transactions after arming on two independent RPC providers, decodes the Pump create event, fails closed on multiple launches and activates only after both providers agree on the creation event and the mint's MSTRx quote, Token-2022 program, fixed 200 bps fee and disabled native holder rewards
 
 ## Allocation and conversion
 
@@ -42,19 +42,19 @@ MSTRx uses Token-2022 transfer-hook extensions. Every routed or distributed tran
 
 ## Reward accounting
 
-The existing exact hold-time model is ported to finalized Solana token history
+The exact hold-time model uses finalized CAPITAL balance changes and deterministic newest-lot-first reductions on a partial sale
 
-The indexer must checkpoint slot, block identity and signature cursor and must not advance if providers disagree. Reorged or merely confirmed state is not eligible
+`services/solana/holderIndexerRunner.ts` discovers mint-wide transfer signatures from the configured transfer source. It verifies each new transaction against two independent finalized RPC providers, stores launch-seeded movements with slot and block identity, re-reads a one-hour overlap and stops if any previously indexed transfer disappears. Reorged or merely confirmed state is not eligible. Its Bitquery realtime adapter is intentionally fail-closed after a six-hour history gap and needs an independently verified historical repair before payouts resume
 
 Every epoch records
 
 - Finalized receipt range
 - Exact funded raw MSTRx amount
-- Eligible holder snapshot and exclusions
+- Time-weighted eligible holder movements and exclusions, including derived Pump curve and PumpSwap pool addresses
 - Deterministic allocation file hash
 - Deterministic batch identifiers
 - Transfer signatures and processed totals
-- Final conservation proof
+- Local exact-conservation evidence and public payout transaction links
 
 ## Automatic distribution
 
@@ -62,13 +62,13 @@ The distributor creates recipient Token-2022 associated token accounts when requ
 
 Every batch is idempotent. Restarts load processed batch identifiers and confirmed signatures before building another transaction
 
-The owner may pause future routing and commitments and recover only the MSTRx still present in the creator address or another explicitly uncommitted account. A completed holder transfer is not recoverable
+The owner may pause future routing and recover only collected but uncommitted MSTRx recorded in the creator receipt ledger. Committed holder inventory, completed holder transfers and reserve inventory are not part of that recovery route
 
 ## Strategic reserve
 
 Reserve inventory is held separately from the reward vault. Governance is a new Solana execution layer and does not reuse Solidity contracts
 
-Only fixed action variants are valid. Arbitrary instructions, arbitrary recipients and browser-supplied transaction data are rejected
+The Solana reserve-governance program has not been deployed or audited. Public voting and governance execution remain disabled. The intended program must support only reviewed fixed action variants; arbitrary instructions, arbitrary recipients and browser-supplied transaction data are not accepted by the current control plane
 
 ## Control plane
 

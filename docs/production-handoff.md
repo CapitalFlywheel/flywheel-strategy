@@ -11,12 +11,16 @@ The CAPITAL mint, project Solana wallets, production RPC endpoints and new X acc
 - Solana owner public key
 - Pump creator public key if different from the owner
 - Separately funded operator, holder-settlement and reserve public keys
-- A finalized transfer-history provider and its protected server credential
+- A mint-wide finalized transfer-history provider and its protected server credential; the current adapter requires Bitquery access with sufficient realtime throughput and a historical backfill procedure
 - Marketing public key if the governance module uses one
 - Primary and independent fallback Solana RPC endpoints
 - New X account URL
 
 Only public keys enter public configuration. Secrets remain in protected server environment files or service-specific keypair paths
+
+The current adapter refuses a Bitquery realtime gap longer than six hours. This is a fail-closed boundary, not an automatic historical repair. Confirm provider coverage and a paid or otherwise reliable backfill route before approving mainnet payouts
+
+The reserve wallet supplies only a public address. Its private key must not be installed on the server. The owner wallet similarly signs only through the private panel and is never imported into a container
 
 ## Mandatory rehearsal
 
@@ -36,6 +40,8 @@ Evidence must cover
 10. Recovery limited to uncommitted balances
 11. Creator-wallet pre-existing MSTRx remaining untouched while only the confirmed collection delta is routed
 12. Public site, Solscan links and heartbeats matching runtime state
+13. Holder transfer-source overlap, outage, and historical backfill without a missing wallet movement
+14. Pump-to-PumpSwap migration with no fee-receipt duplication and no pool wallet receiving a holder payout
 
 ## Release checks
 

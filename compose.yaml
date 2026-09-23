@@ -22,7 +22,6 @@ services:
     command: npm run web:serve
     env_file:
       - .env.web
-      - .env.solana
     environment:
       PORT: 8787
       PUBLIC_DATA_ROOT: /app/data/public
@@ -47,6 +46,17 @@ services:
     volumes:
       - ./data:/app/data
       - ./.secrets/solana:/run/secrets/solana:ro
+
+  solana-holder-indexer:
+    <<: *app
+    command: npm run solana:holder-indexer
+    env_file:
+      - .env.solana
+    environment:
+      PUBLIC_DATA_ROOT: /app/data/public
+      SOLANA_STATE_ROOT: /app/data/solana
+    volumes:
+      - ./data:/app/data
 
   reward-keeper:
     <<: *app
