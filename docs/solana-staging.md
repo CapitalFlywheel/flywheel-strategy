@@ -28,10 +28,10 @@ docker compose -p mstr-system-staging -f compose.yaml -f compose.staging.yaml up
 
 Check that `docker compose -p mstr-system-staging -f compose.yaml -f compose.staging.yaml ps` lists only `web` and that `curl -I http://127.0.0.1:8788/` returns HTTP 200. Do not start the automation profile at this stage
 
-On Windows, use a local-only SSH tunnel:
+On Windows, use a local-only SSH tunnel. Take the SSH user, host and private-key path from the private access handoff; do not publish them in this repository:
 
 ```powershell
-ssh -N -L 8788:127.0.0.1:8788 -i "$env:USERPROFILE\.ssh\mstr-system-deploy-ed25519" mstradmin@150.241.115.203
+ssh -N -L 8788:127.0.0.1:8788 -i "<local-private-key-path>" "<ssh-user>@<server-address>"
 ```
 
 Open `http://127.0.0.1:8788/` in another browser window. This is a private preview, not the public project URL

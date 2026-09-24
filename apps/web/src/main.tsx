@@ -1,7 +1,7 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { WalletModalProvider, WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import "./styles.css";
 import "./redesign.css";
@@ -50,20 +50,6 @@ interface VaultSnapshot {
   updatedAt: number;
 }
 
-interface MarketStatus {
-  marketCapUsd: number;
-  intervalSeconds: number;
-  phase: "pump-curve" | "pumpswap" | "pre-launch";
-  cadence: { confirmedLevel: number };
-}
-
-const cadence = [
-  ["< $500K", "10 min"],
-  ["$500K – $1M", "20 min"],
-  ["$1M – $5M", "30 min"],
-  ["$5M+", "60 min"],
-];
-
 const governanceActions = [
   ["ACCUMULATE MSTRx", "Keep building the strategic reserve"],
   ["BUYBACK + HOLD", "Purchase CAPITAL for permanent public custody"],
@@ -77,11 +63,10 @@ function FlywheelMark({ className = "" }: { className?: string }) {
   return <img className={className} src="/visuals/logo-rotation.gif" alt="FLYWHEEL STRATEGY" />;
 }
 
-function SectionIcon({ kind }: { kind: "flow" | "weight" | "cadence" | "history" | "automation" | "trade" | "convert" | "claim" }) {
+function SectionIcon({ kind }: { kind: "flow" | "weight" | "history" | "automation" | "trade" | "convert" | "claim" }) {
   const paths = {
     flow: "M4 9 20 2l16 7-16 8L4 9Zm0 10 16 8 16-8M4 29l16 8 16-8",
     weight: "M20 3v34M4 12h32M9 12 3 26h12L9 12Zm22 0-6 14h12l-6-14ZM12 37h16",
-    cadence: "M5 34V23h6v11H5Zm12 0V14h6v20h-6Zm12 0V4h6v30h-6",
     history: "M5 18a15 15 0 1 1 2 11M5 6v12h12M20 10v11l7 4",
     automation: "M20 3 35 12v17l-15 8L5 29V12L20 3Zm0 9 8 8-8 8-8-8 8-8Z",
     trade: "M4 14h31l-7-7M36 27H5l7 7",
@@ -145,7 +130,7 @@ function Header({ links, docs = false }: { links: PublicLinks; docs?: boolean })
       <a href="/docs" target={docs ? undefined : "_blank"} rel="noreferrer">Documentation</a>
     </nav>
     <SocialLinks links={links} />
-    <div className="topbar-action">{docs ? <a className="topbar-return" href="/">Back to site</a> : <WalletMultiButton />}</div>
+    <div className="topbar-action">{docs ? <a className="topbar-return" href="/">Back to site</a> : <a className="topbar-return" href="/#rewards">Rewards</a>}</div>
   </header>;
 }
 
@@ -189,41 +174,53 @@ function validRuntimeConfig(value: unknown): value is RuntimeConfig {
 function useRuntimeData() {
   const [config, setConfig] = useState<RuntimeConfig>();
   const [history, setHistory] = useState<RewardHistoryEntry[]>([]);
-  const [market, setMarket] = useState<MarketStatus>();
   const [heartbeats, setHeartbeats] = useState<Record<string, ServiceHeartbeat | undefined>>({});
   const [checkedAt, setCheckedAt] = useState(Date.now());
 
   useEffect(() => {
-    void fetch("/config.json", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((value) => { if (validRuntimeConfig(value)) setConfig(value); })
-      .catch(() => undefined);
-    void fetch("/snapshots/history.json", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() as Promise<RewardHistoryEntry[]> : Promise.reject())
-      .then((value) => setHistory(value.slice(0, 10)))
-      .catch(() => setHistory([]));
-    void fetch("/status/market.json", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() as Promise<MarketStatus> : Promise.reject())
-      .then(setMarket)
-      .catch(() => undefined);
-
-    const services = ["solana-fee-keeper", "solana-holder-indexer", "solana-reward-publisher", "solana-distributor", "solana-governance-keeper"];
-    void Promise.all(services.map(async (service) => {
-      try {
-        const response = await fetch(`/status/${service}.json`, { cache: "no-store" });
-        return [service, response.ok ? await response.json() as ServiceHeartbeat : undefined] as const;
-      } catch {
-        return [service, undefined] as const;
-      }
-    })).then((entries) => { setHeartbeats(Object.fromEntries(entries)); setCheckedAt(Date.now()); });
+    let cancelled = false;
+    const refreshPublicData = () => {
+      void fetch("/config.json", { cache: "no-store" })
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((value) => { if (!cancelled) setConfig(validRuntimeConfig(value) ? value : undefined); })
+        .catch(() => { if (!cancelled) setConfig(undefined); });
+      void fetch("/snapshots/history.json", { cache: "no-store" })
+        .then((response) => response.ok ? response.json() as Promise<RewardHistoryEntry[]> : Promise.reject())
+        .then((value) => { if (!cancelled) setHistory(Array.isArray(value) ? value.slice(0, 10) : []); })
+        .catch(() => { if (!cancelled) setHistory([]); });
+    };
+    const services = ["solana-fee-keeper", "solana-holder-indexer", "solana-reward-publisher", "solana-distributor"];
+    const refreshHeartbeats = () => {
+      void Promise.all(services.map(async (service) => {
+        try {
+          const response = await fetch(`/status/${service}.json`, { cache: "no-store" });
+          return [service, response.ok ? await response.json() as ServiceHeartbeat : undefined] as const;
+        } catch {
+          return [service, undefined] as const;
+        }
+      })).then((entries) => {
+        if (cancelled) return;
+        setHeartbeats(Object.fromEntries(entries));
+        setCheckedAt(Date.now());
+      });
+    };
+    refreshPublicData();
+    refreshHeartbeats();
+    const publicDataTimer = window.setInterval(refreshPublicData, 60_000);
+    const heartbeatTimer = window.setInterval(refreshHeartbeats, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(publicDataTimer);
+      window.clearInterval(heartbeatTimer);
+    };
   }, []);
 
-  return { config, history, market, heartbeats, checkedAt };
+  return { config, history, heartbeats, checkedAt };
 }
 
 function App() {
   const links = usePublicLinks();
-  const { config, history, market, heartbeats, checkedAt } = useRuntimeData();
+  const { config, history, heartbeats, checkedAt } = useRuntimeData();
   const [rewardBalance, setRewardBalance] = useState("—");
   const [reserveBalance, setReserveBalance] = useState("—");
   const [mstrxMultiplier, setMstrxMultiplier] = useState(1);
@@ -258,8 +255,6 @@ function App() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [config]);
 
-  const phase = market?.phase === "pumpswap" ? "PumpSwap" : market?.phase === "pump-curve" ? "Pump curve" : "Not active";
-
   return <main>
     <Header links={links} />
     <section className="story-hero" id="top">
@@ -268,7 +263,7 @@ function App() {
         <p className="hero-slogan">HOLD CAPITAL<br />ACCUMULATE MSTRx</p>
         <p className="hero-description">Pump.fun creator fees continuously build automatic MSTRx rewards for holders and a separate strategic reserve on Solana</p>
         <div className="hero-actions">
-          <WalletMultiButton />
+          <a className="primary-action" href="#rewards" onClick={(event) => scrollToPublicSection(event, "rewards")}>Explore rewards ↓</a>
           <a href="#mechanics" onClick={(event) => scrollToPublicSection(event, "mechanics")}>See how it works ↓</a>
         </div>
       </div>
@@ -299,8 +294,8 @@ function App() {
     <section className="stats-grid">
       <Stat label="Reward vault" value={`${rewardBalance} MSTRx`} detail="Holder inventory only" />
       <Stat label="Strategic reserve" value={`${reserveBalance} MSTRx`} detail="Isolated from rewards" />
-      <Stat label="Reward interval" value={`${(market?.intervalSeconds ?? 600) / 60} min`} detail={market ? `$${Math.round(market.marketCapUsd).toLocaleString()} market cap` : "Starts after launch"} />
-      <Stat label="Market phase" value={phase} detail="Solana network fees funded separately" />
+      <Stat label="Creator fee" value="2%" detail="Paid in MSTRx on the custom pair" />
+      <Stat label="Reward method" value="DIRECT" detail="Funded MSTRx sent to eligible wallets" />
     </section>
 
     <section className="split">
@@ -310,7 +305,7 @@ function App() {
           <div><b>60%</b><span>Automatic holder MSTRx rewards</span></div>
           <div><b>40%</b><span>Strategic MSTRx reserve</span></div>
         </div>
-        <div className="route">2% CREATOR FEE IN MSTRx <i>→</i> 60% HOLDERS <i>→</i> 40% RESERVE</div>
+        <div className="route">2% CREATOR FEE IN MSTRx <i>→</i> 60% HOLDERS / 40% RESERVE</div>
         <p className="lead">CAPITAL uses the official Pump.fun MSTRx custom pair · Native Pump holder rewards stay disabled so the project can route actual MSTRx receipts through its published 60/40 system</p>
       </article>
 
@@ -325,8 +320,13 @@ function App() {
     </section>
 
     <section className="panel cadence-panel">
-      <div className="panel-head"><div><span className="section-number">03</span><SectionIcon kind="cadence" /><h2>Market-cap cadence</h2></div><span className="pill">60m confirmation</span></div>
-      <div className="cadence-grid">{cadence.map(([cap, interval], index) => <div className={(market?.cadence.confirmedLevel ?? 0) === index ? "active" : ""} key={cap}><span>{cap}</span><strong>{interval}</strong><small>{(market?.cadence.confirmedLevel ?? 0) === index ? "Current" : "Locks after confirmation"}</small></div>)}</div>
+      <div className="panel-head"><div><span className="section-number">03</span><SectionIcon kind="flow" /><h2>Reward integrity</h2></div><span className="pill">Funded MSTRx only</span></div>
+      <div className="cadence-grid">
+        <div><span>01 · SOURCE</span><strong>COLLECT</strong><small>Count finalized creator-fee receipts only</small></div>
+        <div><span>02 · ROUTE</span><strong>60 / 40</strong><small>Separate holder inventory from the reserve</small></div>
+        <div><span>03 · ALLOCATE</span><strong>FUND</strong><small>Build exact weights against funded MSTRx</small></div>
+        <div><span>04 · DELIVER</span><strong>SEND</strong><small>Pay eligible wallets directly in bounded batches</small></div>
+      </div>
     </section>
 
     <section className="panel reward-history">
@@ -335,35 +335,37 @@ function App() {
         <b>Epoch {epoch.epoch}</b>
         <span>{new Date(epoch.windowEnd * 1000).toLocaleString()}</span>
         <strong>{formatMstrxRaw(epoch.mstrxRewardRaw, mstrxMultiplier)} MSTRx total</strong>
-        <a href={`/snapshots/epoch-${epoch.epoch}.json`} target="_blank" rel="noreferrer">JSON ↗</a>
+        <a href={`/snapshots/solana-reward-epoch-${epoch.epoch}.json`} target="_blank" rel="noreferrer">JSON ↗</a>
         {epoch.signature && <a href={solscanTransaction(epoch.signature)} target="_blank" rel="noreferrer">TX ↗</a>}
-      </div>)}</div> : <p className="lead">Verified epoch records will appear here after the Solana launch</p>}
+      </div>)}</div> : <p className="lead">No finalized reward epochs to display</p>}
     </section>
 
     <section className="panel operations">
-      <div className="panel-head"><div><span className="section-number">05</span><SectionIcon kind="automation" /><h2>Automation status</h2></div><span className="pill">Public heartbeat</span></div>
+      <div className="panel-head"><div><span className="section-number">05</span><SectionIcon kind="automation" /><h2>System activity</h2></div><span className="pill">Public records</span></div>
       <div className="operations-grid">{[
         ["solana-fee-keeper", "Pump.fun MSTRx collection + exact 60/40 routing"],
+        ["solana-holder-indexer", "Finalized CAPITAL transfer indexing"],
         ["solana-reward-publisher", "Holder calculation + funded epoch"],
         ["solana-distributor", "Automatic MSTRx transfers"],
-        ["solana-governance-keeper", "Automatic reserve execution"],
       ].map(([service, label]) => {
         const heartbeat = heartbeats[service];
-        const healthy = Boolean(heartbeat?.ok && checkedAt - heartbeat.updatedAt < 120_000);
-        return <div key={service} className={healthy ? "healthy" : "offline"}><span>{healthy ? "ONLINE" : heartbeat ? "STALE / ERROR" : "NOT STARTED"}</span><b>{label}</b><small>{heartbeat ? `Last signal: ${new Date(heartbeat.updatedAt).toLocaleString()}` : "Starts after deployment"}</small>{heartbeat?.error && <small className="service-error">{heartbeat.error}</small>}</div>;
+        const continuous = service === "solana-holder-indexer";
+        const current = Boolean(heartbeat?.ok && (!continuous || checkedAt - heartbeat.updatedAt < 120_000));
+        const state = !heartbeat ? "NO PUBLIC SIGNAL" : !heartbeat.ok ? "ERROR" : continuous ? current ? "CURRENT" : "STALE" : "RECORDED";
+        return <div key={service} className={current ? "healthy" : "offline"}><span>{state}</span><b>{label}</b><small>{heartbeat ? `Last signal: ${new Date(heartbeat.updatedAt).toLocaleString()}` : "No public activity recorded"}</small>{heartbeat?.error && <small className="service-error">{heartbeat.error}</small>}</div>;
       })}</div>
     </section>
 
     <section className="governance-callout">
-      <div><span>06 · HOLDER GOVERNANCE</span><h2>RESERVE GOVERNANCE</h2><p>Voting is not active yet · Any reserve vote will require a reviewed Solana program and published rules</p></div>
+      <div><span>06 · RESERVE POLICY</span><h2>RESERVE GOVERNANCE</h2><p>Voting is disabled · The strategic reserve remains separate from holder reward inventory</p></div>
       <a href="/governance" target="_blank" rel="noreferrer">Open governance ↗</a>
     </section>
 
     <section className="transparency" id="transparency">
       <span>PUBLIC BY DEFAULT</span>
-      <h2>MSTRx fee sweeps, 60/40 allocations and payout batches will be publicly traceable after launch</h2>
-      <p>{config ? "Every live Solana address links directly to the public explorer" : "The final mint and program addresses will appear here after the verified Pump.fun launch"}</p>
-      <div className="project-contract-card"><span>CAPITAL TOKEN MINT</span>{config ? <a href={solscanToken(config.projectMint)} target="_blank" rel="noreferrer">{config.projectMint} ↗</a> : <b>PUBLISHED HERE AFTER MAINNET LAUNCH</b>}</div>
+      <h2>Verify the CAPITAL mint, MSTRx vaults and holder payouts on Solana</h2>
+      <p>{config ? "Verified Solana addresses link directly to the public explorer" : "Only verified Solana addresses and finalized activity are published"}</p>
+      <div className="project-contract-card"><span>CAPITAL TOKEN MINT</span>{config ? <a href={solscanToken(config.projectMint)} target="_blank" rel="noreferrer">{config.projectMint} ↗</a> : <b>NO VERIFIED MINT AVAILABLE</b>}</div>
       {config && <div className="address-grid">{[
         ["Creator-fee recipient", config.creatorFeeRecipient],
         ["Reward vault", config.rewardVaultTokenAccount],
@@ -442,21 +444,18 @@ function DocumentationPage() {
 
 function GovernancePage() {
   const links = usePublicLinks();
-  return <main><Header links={links} /><section className="subpage-hero governance-hero"><span>SOLANA HOLDER GOVERNANCE</span><h1>RESERVE GOVERNANCE</h1><p>Voting is not active · Rules and the restricted execution program will be published after independent review</p></section><section className="panel governance governance-page-panel"><div className="panel-head"><div><span className="section-number">NOT ACTIVE</span><h2>No active proposal</h2></div><span className="pill">NOT STARTED</span></div><div className="option-grid">{governanceActions.map(([title, detail], index) => <div key={title}><span>0{index + 1}</span><b>{title}</b><small>{detail}</small></div>)}</div><footer><span>Illustrative reserve actions only</span><span>Voting and execution remain disabled until the reviewed program is deployed</span></footer></section><Footer links={links} /></main>;
+  return <main><Header links={links} /><section className="subpage-hero governance-hero"><span>SOLANA RESERVE POLICY</span><h1>RESERVE GOVERNANCE</h1><p>Public voting is disabled · No reviewed Solana execution program is deployed</p></section><section className="panel governance governance-page-panel"><div className="panel-head"><div><span className="section-number">NO ACTIVE VOTE</span><h2>No active proposal</h2></div><span className="pill">VOTING DISABLED</span></div><div className="option-grid">{governanceActions.map(([title, detail], index) => <div key={title}><span>0{index + 1}</span><b>{title}</b><small>{detail}</small></div>)}</div><footer><span>Illustrative reserve actions, not live voting options</span><span>The reserve is held separately from funded holder rewards</span></footer></section><Footer links={links} /></main>;
 }
 
 const SolanaAdminPanel = lazy(() => import("./solanaAdmin").then((module) => ({ default: module.SolanaAdminPanel })));
 
 function Root() {
-  const endpoint = useMemo(() => solanaMainnet.rpcUrl, []);
-  const content = window.__FLYWHEEL_ADMIN__ === true
-    ? <Suspense fallback={<main style={{ padding: 32 }}>Загрузка панели…</main>}><SolanaAdminPanel /></Suspense>
-    : window.location.pathname.startsWith("/docs")
-      ? <DocumentationPage />
-      : window.location.pathname.startsWith("/governance")
-        ? <GovernancePage />
-        : <App />;
-  return <ConnectionProvider endpoint={endpoint}><WalletProvider wallets={[]} autoConnect><WalletModalProvider>{content}</WalletModalProvider></WalletProvider></ConnectionProvider>;
+  if (window.__FLYWHEEL_ADMIN__ === true) {
+    return <ConnectionProvider endpoint={solanaMainnet.rpcUrl}><WalletProvider wallets={[]} autoConnect><WalletModalProvider><Suspense fallback={<main style={{ padding: 32 }}>Загрузка панели…</main>}><SolanaAdminPanel /></Suspense></WalletModalProvider></WalletProvider></ConnectionProvider>;
+  }
+  if (window.location.pathname.startsWith("/docs")) return <DocumentationPage />;
+  if (window.location.pathname.startsWith("/governance")) return <GovernancePage />;
+  return <App />;
 }
 
 createRoot(document.getElementById("root")!).render(<Root />);

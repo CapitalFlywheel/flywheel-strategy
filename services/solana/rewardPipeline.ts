@@ -247,9 +247,9 @@ export async function finalizeRewardEpoch(environment: RewardPipelineEnvironment
     planHash: plan.planHash,
     batches: plan.batches.map((batch) => ({ id: batch.id, rawTotal: batch.rawTotal, signature: batch.signature, allocations: batch.allocations })),
   };
-  await mkdir(environment.publicDataRoot, { recursive: true });
-  await writeDurableJson(resolve(environment.publicDataRoot, `solana-reward-epoch-${plan.epochId}.json`), publicPlan);
   const historyRoot = resolve(environment.publicDataRoot, "snapshots");
+  await mkdir(historyRoot, { recursive: true });
+  await writeDurableJson(resolve(historyRoot, `solana-reward-epoch-${plan.epochId}.json`), publicPlan);
   const historyPath = resolve(historyRoot, "history.json");
   let history: Array<{ epoch: number; windowEnd: number; mstrxRewardRaw: string; signature?: string; recipientCount: number }> = [];
   try {
@@ -266,7 +266,6 @@ export async function finalizeRewardEpoch(environment: RewardPipelineEnvironment
     recipientCount: plan.batches.reduce((count, batch) => count + batch.allocations.length, 0),
   };
   history = [entry, ...history.filter((item) => item.epoch !== entry.epoch)].slice(0, 50);
-  await mkdir(historyRoot, { recursive: true });
   await writeDurableJson(historyPath, history);
   plan.finalized = true;
   await savePlan(environment, plan);

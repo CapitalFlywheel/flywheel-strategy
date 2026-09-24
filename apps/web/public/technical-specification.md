@@ -2,9 +2,9 @@
 
 ## Overview
 
-CAPITAL is being rebuilt as a Pump.fun token paired with the official Solana MSTRx asset
+FLYWHEEL STRATEGY is a Solana fee-funded system built around CAPITAL and the official MSTRx custom pair on Pump.fun
 
-Pump.fun collects a fixed 2% creator fee in MSTRx. Actual creator-fee receipts are divided between automatic holder rewards and a separate strategic reserve
+The configured 2% creator fee is paid in MSTRx. Actual project receipts are divided between automatic holder rewards and a separate strategic reserve
 
 ## Fee source
 
@@ -58,12 +58,10 @@ An interrupted batch can resume without paying the same allocation twice
 
 Reward weight combines CAPITAL balance with exact hold time
 
-```text
-holder weight = balance × exact hold time × loyalty factor
-holder reward = funded epoch × holder weight ÷ total eligible weight
-```
+- Holder weight: `balance × exact hold time × loyalty factor`
+- Holder reward: `funded epoch × holder weight ÷ total eligible weight`
 
-Partial sales consume newest lots first. Pump curve custody, PumpSwap custody, vaults, program accounts, burn accounts and project operational wallets are excluded
+Partial sales consume newest lots first. The derived Pump curve and PumpSwap custody addresses, project service wallets and explicitly configured additional addresses are excluded
 
 Raw-unit remainders are assigned deterministically by largest remainder. A wallet whose calculated share is zero raw MSTRx units receives no transfer in that epoch
 
@@ -71,32 +69,28 @@ Raw-unit remainders are assigned deterministically by largest remainder. A walle
 
 The strategic reserve is isolated from holder reward inventory
 
-Its restricted Solana governance program may support only published actions such as accumulating MSTRx, CAPITAL buyback and hold, buyback and burn, buyback and lock, MSTRx lock or a disclosed marketing allocation
+Potential reserve actions include accumulating MSTRx, CAPITAL buyback and hold, buyback and burn, buyback and lock, MSTRx lock or a disclosed marketing allocation
 
-Arbitrary calls and arbitrary recipients are not accepted by the control plane
+No Solana governance program has been deployed or independently reviewed. Public voting and automatic execution of reserve decisions are disabled. The reserve remains in a separately controlled wallet, not in an immutable holder-governed vault
 
-Public voting stays unavailable until the Solana governance program is audited and deployed
+The fee split does not give the owner access to completed holder payouts
 
-## Owner controls
+## Operational custody
 
-The private panel uses a Solana wallet signature for one exact action at a time
+The owner and Pump creator share one user-controlled Solana wallet. A protected server-side copy of its keypair is required for automatic creator-fee collection and routing, while private control actions require an exact wallet signature. A server compromise could also compromise owner authority
 
-It exposes separate controls for configuration verification, launch detection, both Pump fee routes, routing pause, epoch preparation, automatic distribution, finalization and recovery of uncommitted balances
+The owner can pause future fee routing and recover uncommitted project-controlled receipts. Funded holder inventory is held by a separate server-controlled wallet and tracked by a durable allocation journal. This is an operational restriction, not an immutable on-chain holder vault
 
-One launch-detection arm signature authorizes the detector window. The exact mint is verified, published and activated automatically after finalized detection, without a second owner signature
-
-The owner and Pump creator are the same user-controlled wallet. A protected server-side copy of that keypair is required for automatic creator-fee routing, while panel actions still require an exact wallet signature. This means a server compromise could also compromise owner authority. The server never accepts arbitrary browser-supplied transaction instructions
-
-The current distributor commits and tracks funded holder allocations in its durable journal, and its permitted recovery path excludes that committed inventory. This is an operational software restriction, not an immutable on-chain vault: the holder-inventory signing key is server-held. Completed transfers cannot be recalled
+Completed holder transfers cannot be recalled
 
 ## Public verification
 
-After launch the site will publish the CAPITAL mint, project-controlled creator address, reward vault, reserve vault, fee collection and 60/40 routing signatures, payout batches and finalized epoch files
+The site displays verified CAPITAL mint and project account addresses when available. Reward history links to finalized epoch files and payout signatures. Fee collection and routing are visible through the linked Solana accounts
 
-The X link remains intentionally unpublished until the new Solana account is supplied
+No reward amount, transfer or governance decision is presented as completed without a corresponding record
 
-## Current status
+The official project X account is `@capital_mstr`
 
-The Solana version is not deployed yet
+## Economic limits
 
-The CAPITAL mint and final program addresses will appear only after the verified Pump.fun launch and production checks
+Rewards depend on actual fee receipts, holder eligibility and successful Token-2022 transfers. They are not fixed income or guaranteed returns. The reserve is a separately held project asset, not a redemption claim on CAPITAL

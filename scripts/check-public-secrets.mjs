@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, join, relative } from "node:path";
+import { rules } from "./lib/publicSecretPatterns.mjs";
 
 function filesystemFiles(root = process.cwd()) {
   const excludedDirectories = new Set([".git", "node_modules", "artifacts", "cache", "coverage", "dist", "work"]);
@@ -30,23 +31,8 @@ try {
 }
 const skippedExtensions = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2",
-  ".ttf", ".zip", ".gz", ".pdf", ".mp4", ".mov", ".sqlite", ".db",
+  ".ttf", ".otf", ".zip", ".gz", ".pdf", ".mp4", ".mov", ".webm", ".mp3", ".wav", ".sqlite", ".db",
 ]);
-
-const joined = (...parts) => new RegExp(parts.join(""), "i");
-const rules = [
-  { name: "Alchemy API key", pattern: joined("alch", "_[A-Za-z0-9_-]{16,}") },
-  { name: "GitHub token", pattern: joined("(?:ghp|github_pat)", "_[A-Za-z0-9_]{20,}") },
-  { name: "private-key file body", pattern: joined("BEGIN ", "(?:RSA |EC |OPENSSH )?PRIVATE KEY") },
-  {
-    name: "64-byte private key assignment",
-    pattern: joined("(?:PRIVATE_KEY|DEPLOYER_KEY|AUTOMATION_KEY|REWARD_KEY)", "\\s*[:=]\\s*[\\\"']?(?:0x)?[a-f0-9]{64}"),
-  },
-  {
-    name: "password assignment",
-    pattern: joined("(?:PASSWORD|PASSWD)", "\\s*[:=]\\s*[\\\"']?[^\\s\\\"']{8,}"),
-  },
-];
 
 const suspiciousNames = [
   /(^|\/)\.env($|\.)/i,

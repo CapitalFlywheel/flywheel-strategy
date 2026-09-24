@@ -13,7 +13,7 @@ a, button { transition: color .18s ease, background .18s ease, border-color .18s
 .brand-lockup small, .footer-brand small { color: #bbb9b5; font-size: 8px; letter-spacing: .32em; }
 .topbar nav a { color: #d6d5d1; font-family: inherit; font-size: 10px; letter-spacing: .05em; }
 .topbar-social { padding: 8px; border: 0; color: #e9e8e3; }
-.topbar-action button { min-height: 44px; font-size: 10px; letter-spacing: .08em; }
+.topbar-action .topbar-return { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
 .story-hero { position: relative; display: flex; flex-direction: column; min-height: 0; color: var(--warm); background: #030303; isolation: isolate; }
 .hero-copy { position: relative; z-index: 2; align-self: stretch; min-height: clamp(760px,58vw,900px); padding: 66px 6% 54px; }
 .hero-brand-title { position: relative; width: max-content; max-width: 100%; margin: 0 0 28px; font: 400 clamp(100px,14vw,210px)/.94 var(--display); letter-spacing: -.01em; text-shadow: 0 3px 30px #0005; }
@@ -23,9 +23,9 @@ a, button { transition: color .18s ease, background .18s ease, border-color .18s
 .hero-copy > .hero-slogan { max-width: 560px; margin: 0 0 24px; color: var(--warm); font: 700 clamp(24px,2.25vw,36px)/1.08 "Space Grotesk",sans-serif; letter-spacing: .015em; }
 .hero-copy > .hero-description { max-width: 465px; margin: 0; color: #b4b4b0; font-size: 16px; line-height: 1.65; font-weight: 400; }
 .hero-actions { gap: 18px; margin-top: 30px; }
-.hero-actions button, .hero-actions a { border: 1px solid var(--orange); padding: 16px 22px; font: 600 11px "Space Grotesk",sans-serif; letter-spacing: .06em; }
-.hero-actions button { color: #050505; background: var(--orange); }
+.hero-actions a { border: 1px solid var(--orange); padding: 16px 22px; font: 600 11px "Space Grotesk",sans-serif; letter-spacing: .06em; }
 .hero-actions a { color: var(--warm); background: #05050560; border-color: #ffffff35; }
+.hero-actions a.primary-action { color: #050505; background: var(--orange); border-color: var(--orange); }
 .hero-actions button:hover, .hero-actions a:hover { transform: none; background: #ff8a32; color: #050505; border-color: #ff8a32; }
 .hero-symbol { position: absolute; z-index: 0; top: 0; right: 0; width: 100%; height: clamp(760px,58vw,900px); min-height: 0; padding: 0; display: block; background: #030303; overflow: hidden; }
 .bearing-visual { width: 100%; height: 100%; object-fit: cover; object-position: center 20%; }
@@ -136,8 +136,7 @@ a, button { transition: color .18s ease, background .18s ease, border-color .18s
   .topbar nav a { font-size: 9px; padding: 3px 0; }
   .topbar > .topbar-social { display: none; }
   .topbar-action { margin-left: auto; }
-  .topbar-action button { width: auto; min-height: 36px; max-width: 125px; padding: 10px; font-size: 9px; }
-  .topbar-action button::after { content: none; }
+  .topbar-action .topbar-return { min-height: 36px; padding: 10px; font-size: 9px; }
   .hero-copy { min-height: 700px; padding: 44px 20px 35px; display: flex; flex-direction: column; align-items: flex-start; }
   .hero-brand-title { font-size: clamp(67px,16vw,108px); margin-bottom: auto; line-height: .95; }
   .story-hero h1 { margin-top: 175px; margin-bottom: 12px; font-size: 23px; line-height: 1.3; }

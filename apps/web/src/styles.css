@@ -303,8 +303,6 @@ main { width: 100%; min-height: 100vh; overflow: hidden; }
   .brand-lockup small { display: none; }
   .brand-lockup b { font-size: 10px; letter-spacing: .02em; white-space: nowrap; }
   .topbar-mark { width: 32px; height: 32px; flex: 0 0 auto; }
-  .topbar-action button { width: 82px; padding: 10px 8px; overflow: hidden; font-size: 0; white-space: nowrap; }
-  .topbar-action button::after { content: "CONNECT"; font-size: 10px; }
   .topbar > .topbar-social { padding: 9px; font-size: 10px; }
   .topbar-social .x-logo-icon, .topbar-social .github-logo-icon { width: 14px; height: 14px; }
   .topbar-return { padding: 10px; font-size: 10px; }
