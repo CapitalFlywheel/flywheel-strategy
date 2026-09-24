@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { open, readFile, rename, unlink } from "node:fs/promises";
-import { parse as parseDotenv } from "dotenv";
+import { prepareBitqueryEnv } from "./lib/bitqueryImportEnv.mjs";
 
 // One-off staging setup: credentials arrive via stdin, never command arguments.
 const destination = process.argv[2];
@@ -19,25 +19,8 @@ try {
     chunks.push(chunk);
   }
   const input = JSON.parse(Buffer.concat(chunks).toString("utf8")) ?? {};
-  const clientId = input.clientId;
-  const clientSecret = input.clientSecret;
-  if (typeof clientId !== "string" || typeof clientSecret !== "string"
-    || clientId.length < 8 || clientSecret.length < 8
-    || /[\r\n]/.test(clientId) || /[\r\n]/.test(clientSecret)) {
-    throw new Error("BITQUERY_CREDENTIALS_INVALID");
-  }
   const oldContent = await readFile(destination, "utf8");
-  const updates = {
-    BITQUERY_CLIENT_ID: clientId,
-    BITQUERY_CLIENT_SECRET: clientSecret,
-    BITQUERY_API_KEY: "",
-  };
-  const kept = oldContent.split(/\r?\n/).filter((line) => !(line.split("=", 1)[0] in updates));
-  const nextContent = `${kept.filter(Boolean).join("\n")}\n${Object.entries(updates).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n")}\n`;
-  const parsed = parseDotenv(nextContent);
-  if (parsed.BITQUERY_CLIENT_ID !== clientId || parsed.BITQUERY_CLIENT_SECRET !== clientSecret) {
-    throw new Error("BITQUERY_ENV_ROUNDTRIP_FAILED");
-  }
+  const { nextContent, status } = prepareBitqueryEnv(input, oldContent);
   temporary = `/config/.env.solana.tmp-${randomBytes(12).toString("hex")}`;
   const file = await open(temporary, "wx", 0o600);
   try {
@@ -48,10 +31,11 @@ try {
   }
   await rename(temporary, destination);
   temporary = undefined;
-  console.log("BITQUERY_CREDENTIALS_INSTALLED");
+  console.log(status);
 } catch (error) {
   console.error(error instanceof Error && [
-    "BITQUERY_INPUT_TOO_LARGE", "BITQUERY_CREDENTIALS_INVALID", "BITQUERY_ENV_ROUNDTRIP_FAILED",
+    "BITQUERY_INPUT_TOO_LARGE", "BITQUERY_CREDENTIALS_INVALID", "BITQUERY_API_KEY_INVALID",
+    "BITQUERY_ENV_ROUNDTRIP_FAILED",
   ].includes(error.message) ? error.message : "BITQUERY_IMPORT_FAILED");
   process.exitCode = 1;
 } finally {

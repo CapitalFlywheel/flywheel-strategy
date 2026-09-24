@@ -29,9 +29,10 @@ The two RPC URLs must be HTTPS and have different provider hostnames. Neither be
 RPC endpoints alone do not reliably list every CAPITAL transfer by mint, because some SPL transfer transactions do not mention the mint address. The current indexer uses Bitquery's mint-filtered Solana Transfers API to discover signatures and then verifies every new transaction against both independent RPCs
 
 1. Create a Bitquery account and verify that the plan allows the Solana realtime Transfers query by mint
-2. Store its access token only as `BITQUERY_API_KEY` in the protected server environment
-3. Before mainnet payouts, prove that the source includes the Pump creation transaction, a regular holder-to-holder transfer and the Pump-to-PumpSwap migration; otherwise the indexer stops
-4. Confirm a historical backfill arrangement for an outage longer than six hours. The current realtime adapter deliberately stops rather than paying from a partial history
+2. In Bitquery, open **Authorization → Applications → Tokens** for the application and generate a manual API V2 access token. If the application displays `Client Secret: N/A`, this token route does not require the secret. Do not use the temporary token shown by IDE code generation
+3. Store the raw token (without the `Bearer` prefix) only as `BITQUERY_API_KEY` in the protected server environment. Record its expiry and rotate it before then; a static token cannot refresh itself. When a working Client ID and Client Secret are available, the runner can instead use both OAuth fields for automatic refresh
+4. Before mainnet payouts, prove that the source includes the Pump creation transaction, a regular holder-to-holder transfer and the Pump-to-PumpSwap migration; otherwise the indexer stops
+5. Confirm a historical backfill arrangement for an outage longer than six hours. The current realtime adapter deliberately stops rather than paying from a partial history
 
 Bitquery currently lists its Solana token transfers/balances pack at approximately $500/month ($400/month on annual billing). Do not purchase it solely on this document: confirm the exact current product, coverage and cost with Bitquery and compare it with alternative indexing arrangements before approving production spend
 
@@ -45,5 +46,6 @@ The Solana control runner and holder indexer read `.env.solana`; the public web 
 - [Alchemy: current pricing](https://www.alchemy.com/pricing)
 - [Helius: current plans](https://www.helius.dev/pricing)
 - [Bitquery: Solana Transfers query](https://docs.bitquery.io/docs/blockchain/Solana/solana-transfers/)
+- [Bitquery: generate an application access token](https://docs.bitquery.io/docs/authorization/how-to-generate/)
 - [Bitquery: historical coverage and realtime retention](https://docs.bitquery.io/docs/blockchain/Solana/historical-aggregate-data/)
 - [Bitquery: current plans](https://bitquery.io/pricing)
