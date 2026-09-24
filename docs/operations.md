@@ -72,7 +72,7 @@ Automation must remain stopped until all checks pass
 11. Mint-wide transfer discovery covers the creation transaction and all transfers through the finalized checkpoint, with no retention gap
 12. The reserve and recovery addresses are controlled by the project; no reserve private key is installed on the server
 13. The creator's MSTRx fee vault is clean and this creator has no other MSTRx-paired Pump token: the fee vault is scoped by creator and quote asset, not by CAPITAL mint
-14. Bitquery authentication and global realtime transfer coverage pass the prelaunch probe; this does not replace the mint-specific holder-history check after launch
+14. Bitquery authentication and global realtime transfer coverage pass the initial provider probe; this does not replace the mint-specific holder-history check after token creation
 
 ## Runtime rules
 

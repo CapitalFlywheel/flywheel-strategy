@@ -44,8 +44,8 @@ const actionGroups = [
   {
     title: "Launch control",
     actions: [
-      ["verify_launch_config", "Verify pre-launch configuration", "Checks wallet roles, MSTRx, both RPCs and Bitquery history coverage · Actual Pump settings are checked after token creation"],
-      ["arm_launch_detection", "Arm automatic Pump.fun launch", "One pre-launch signature watches the approved creator, verifies one exact mint and activates it automatically"],
+      ["verify_launch_config", "Verify configuration", "Checks wallet roles, MSTRx, both RPCs and Bitquery history coverage · Actual Pump settings are checked after token creation"],
+      ["arm_launch_detection", "Arm automatic Pump.fun launch", "One setup signature watches the approved creator, verifies one exact mint and activates it automatically"],
       ["disarm_launch_detection", "Disarm detection", "Stops launch discovery without changing any balances"],
       ["activate_postlaunch", "Retry verified activation", "Re-runs the same two-RPC Pump create-event detection and validation if automatic activation was interrupted"],
     ],
@@ -171,7 +171,7 @@ export function SolanaAdminPanel() {
 
     <section className="admin-grid">
       <article className="admin-primary-card">
-        <div className="admin-card-head"><div><span>LIVE CONTROL STATE</span><h2>Launch and automation</h2></div><b className={status?.launch.activated ? "green" : "amber"}>{status?.launch.activated ? "ACTIVE" : "PRE-LAUNCH"}</b></div>
+        <div className="admin-card-head"><div><span>LIVE CONTROL STATE</span><h2>Launch and automation</h2></div><b className={status?.launch.activated ? "green" : "amber"}>{status?.launch.activated ? "ACTIVE" : "NOT ACTIVE"}</b></div>
         <div className="admin-services">{services.length ? services.map(([name, service]) => <div key={name}><i className={service.ok ? "online" : "offline"} /><span><b>{name}</b><small>{service.updatedAt ? new Date(service.updatedAt).toLocaleString() : "No heartbeat"}</small></span></div>) : <div><i className="offline" /><span><b>Services not started</b><small>Production credentials are not installed</small></span></div>}</div>
         <p className="admin-note">{notice}</p>
       </article>

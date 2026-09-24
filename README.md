@@ -17,11 +17,7 @@
   <a href="SECURITY.md">Security</a>
 </p>
 
-> **Status — pre-launch Solana build**
->
-> The CAPITAL mint has not been published for this build, and the automated fee-to-holder route has not yet passed a live end-to-end mainnet rehearsal. Do not interpret source code or a staging preview as proof of active rewards. The previous Robinhood Chain system remains in this repository as legacy history, not as the Solana launch configuration
-
-## How the flywheel is designed to work
+## How the flywheel works
 
 | Trade | Collect | Separate | Deliver |
 |:--|:--|:--|:--|
@@ -76,6 +72,8 @@ npm run web:build
 | [`contracts/`](contracts/) and [`services/keeper/`](services/keeper/) | Legacy Robinhood Chain implementation, excluded from the Solana runtime |
 
 The [production handoff](docs/production-handoff.md) lists the evidence required before real-value operation. Public addresses, transactions and payout records should be checked against deployed state when available
+
+Verify live behavior against the published mint, fee receipts and payout transactions; source code and local tests alone do not establish onchain execution. The Robinhood implementation remains in this repository as legacy history, not as Solana configuration
 
 ## Repository safety
 

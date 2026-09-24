@@ -258,7 +258,7 @@ function App() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [config]);
 
-  const phase = market?.phase === "pumpswap" ? "PumpSwap" : market?.phase === "pump-curve" ? "Pump curve" : "Pre-launch";
+  const phase = market?.phase === "pumpswap" ? "PumpSwap" : market?.phase === "pump-curve" ? "Pump curve" : "Not active";
 
   return <main>
     <Header links={links} />

@@ -1,12 +1,12 @@
 # Solana production handoff
 
-## Status
+## Verification standard
 
-The Solana implementation is in pre-launch staging. A working website preview, passing local tests or a read-only RPC check is **not** evidence of a live fee-to-holder payout cycle. The production CAPITAL mint has not been published for this build. No production creator-fee collection, 60/40 routing, direct holder payout or PumpSwap migration has been demonstrated end to end
+A working website, passing local tests or a read-only RPC check is **not** evidence of a live fee-to-holder payout cycle. Verify creator-fee collection, 60/40 routing, direct holder payouts and PumpSwap migration from finalized transactions before describing them as observed behavior
 
 Public voting remains disabled: the proposed Solana reserve-governance program is neither deployed nor audited. Do not market reserve decisions as active on-chain governance
 
-The new public social account is [@capital_mstr](https://x.com/capital_mstr). The project website is [flywheelstrategy.xyz](https://flywheelstrategy.xyz). Both links must be checked against the deployed site before publication
+The public social account is [@capital_mstr](https://x.com/capital_mstr). The project website is [flywheelstrategy.xyz](https://flywheelstrategy.xyz). Both links must agree with the deployed site
 
 ## Identity and custody
 

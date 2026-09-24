@@ -16,12 +16,12 @@ In the approved single-wallet configuration, the owner, Pump creator and recover
 
 ## Launch actions
 
-- Verify pre-launch wallet roles, RPC consensus, MSTRx asset properties and Bitquery transfer-history availability
+- Verify wallet roles, RPC consensus, MSTRx asset properties and Bitquery transfer-history availability
 - Arm detection for one coin created by the approved creator
 - Disarm detection without changing balances
 - Automatic activation of only the independently verified detected mint
 
-The intended Pump.fun configuration is a custom pair with the official MSTRx quote mint, native Pump holder rewards disabled and a fixed creator fee of 200 basis points. The actual coin fields are verified only after Pump creates the mint; the pre-launch button cannot prove the future coin's settings
+The intended Pump.fun configuration is a custom pair with the official MSTRx quote mint, native Pump holder rewards disabled and a fixed creator fee of 200 basis points. The actual coin fields are verified only after Pump creates the mint; the configuration check cannot prove the future coin's settings
 
 ## Fee actions
 

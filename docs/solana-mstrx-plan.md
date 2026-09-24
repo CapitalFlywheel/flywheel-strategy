@@ -1,6 +1,6 @@
 # FLYWHEEL STRATEGY Solana MSTRx plan
 
-Status: implementation staged, production activation blocked pending final identities, complete transfer-history coverage and live end-to-end evidence. This document does not authorize a mainnet launch or replace live configuration
+This document defines the Solana system and its verification requirements. It does not replace deployed configuration or finalized transaction evidence
 
 Verified: 22 September 2026
 
@@ -120,7 +120,7 @@ The server maps these allowlisted actions to fixed code. It never accepts browse
 
 ## One-signature launch target
 
-All wallets, associated token accounts, RPC providers and services are prepared before launch. The owner signs one pre-launch `ARM` challenge. Pump coin creation and the optional first buy are then performed through the real Pump.fun launch flow
+All wallets, associated token accounts, RPC providers and services are prepared before token creation. The owner signs one launch-detection `ARM` challenge. Pump coin creation and the optional first buy are then performed through the real Pump.fun flow
 
 No post-launch owner signature is required for activation, normal fee collection, routing or automatic payout. The separately authorized service keys execute those routines immediately after finalized launch detection
 

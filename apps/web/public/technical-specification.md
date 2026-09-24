@@ -83,7 +83,7 @@ The private panel uses a Solana wallet signature for one exact action at a time
 
 It exposes separate controls for configuration verification, launch detection, both Pump fee routes, routing pause, epoch preparation, automatic distribution, finalization and recovery of uncommitted balances
 
-One pre-launch arm signature authorizes the detector window. The exact mint is verified, published and activated automatically after finalized detection, without a second post-launch owner signature
+One launch-detection arm signature authorizes the detector window. The exact mint is verified, published and activated automatically after finalized detection, without a second owner signature
 
 The owner and Pump creator are the same user-controlled wallet. A protected server-side copy of that keypair is required for automatic creator-fee routing, while panel actions still require an exact wallet signature. This means a server compromise could also compromise owner authority. The server never accepts arbitrary browser-supplied transaction instructions
 
