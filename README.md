@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>HOLD CAPITAL · ACCUMULATE MSTRx</strong><br>
-  A Solana fee-funded reward system designed around direct holder payouts and a separate strategic reserve<br>
+  A Solana fee-funded reward system with direct holder payouts and a separate strategic reserve<br>
   <strong>CAPITAL IN MOTION</strong>
 </p>
 
@@ -33,12 +33,12 @@ project-controlled Pump creator-fee receipts in MSTRx
 
 The 2% setting is the **creator fee**, not a claim about every fee a trader pays. The 60/40 split applies to MSTRx actually collected by the project. SOL for transactions, rent and operations is funded separately. Rewards depend on trading activity and successful operation; they are not guaranteed
 
-Pump's [supported-pair list](https://pump.fun/docs/custom-pairs) identifies the MSTRx mint and explains that paired-asset fees are paid in the quote asset. Pair eligibility, issuer restrictions and platform terms must be checked again before launch
+Pump's [supported-pair list](https://pump.fun/docs/custom-pairs) identifies the MSTRx mint and explains that paired-asset fees are paid in the quote asset. Pair eligibility, issuer restrictions and platform terms are external conditions that require current-source verification
 
 ## Holder experience
 
 - Reward weight combines CAPITAL balance and exact hold time, with newest lots consumed first on partial sales
-- Eligible wallets are intended to receive MSTRx without connecting to this website, signing a claim or paying payout fees
+- The payout pipeline sends MSTRx directly to eligible wallets without a website connection, claim signature or holder-paid payout fee
 - A complete epoch must be funded before distribution; batches are recorded for restart-safe, duplicate-resistant delivery
 - Finalized holder history and fee receipts are checked against independent RPC providers; uncertain data stops progression instead of estimating payouts
 
@@ -71,7 +71,7 @@ npm run web:build
 | [`assets/brand/final/`](assets/brand/final/) | Approved avatar, banner and visual identity sources |
 | [`contracts/`](contracts/) and [`services/keeper/`](services/keeper/) | Legacy Robinhood Chain implementation, excluded from the Solana runtime |
 
-The [production handoff](docs/production-handoff.md) lists the evidence required before real-value operation. Public addresses, transactions and payout records should be checked against deployed state when available
+The [production handoff](docs/production-handoff.md) lists the evidence required for real-value operation. Public addresses, transactions and payout records should be checked against deployed state
 
 Verify live behavior against the published mint, fee receipts and payout transactions; source code and local tests alone do not establish onchain execution. The Robinhood implementation remains in this repository as legacy history, not as Solana configuration
 
