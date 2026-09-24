@@ -1,59 +1,47 @@
 # Solana production handoff
 
-## Readiness snapshot · 23 September 2026
+## Status
 
-- Repository branch `solana-mstrx` contains the Solana web UI, private signed-action panel, two-RPC launch validation, durable fee settlement, mint-wide holder journal, restart-aware direct MSTRx payout code, and a dual-RPC-checked public vault snapshot
-- Local TypeScript, Solana tests, web tests, web build and publishable-file secret scan pass
-- The public domain responds, but this repository revision has not been installed on the VPS; the existing deploy SSH key is currently rejected by the server
-- No Solana production wallet roles, authenticated RPC URLs, Bitquery credential, new X link, or CAPITAL mint have been configured
-- No mainnet fee sweep, 60/40 transfer, holder payout, or PumpSwap migration has been verified end to end
-- Solana reserve governance is not implemented or audited; the public voting interface is inactive
-- The current upstream dependency audit reports 8 high and 4 moderate production advisories and no critical advisory. The suggested automated major downgrades are incompatible with the required Pump V2 path, so independent review or an upstream fix is still required
+The Solana implementation is in pre-launch staging. A working website preview, passing local tests or a read-only RPC check is **not** evidence of a live fee-to-holder payout cycle. The production CAPITAL mint has not been published for this build. No production creator-fee collection, 60/40 routing, direct holder payout or PumpSwap migration has been demonstrated end to end
 
-Do not describe the code as live automation or a completed mainnet launch from local test results
+Public voting remains disabled: the proposed Solana reserve-governance program is neither deployed nor audited. Do not market reserve decisions as active on-chain governance
 
-## Current boundary
+The new public social account is [@capital_mstr](https://x.com/capital_mstr). The project website is [flywheelstrategy.xyz](https://flywheelstrategy.xyz). Both links must be checked against the deployed site before publication
 
-The repository is prepared for a Solana launch but is not authorized for mainnet activation
+## Identity and custody
 
-The CAPITAL mint, project Solana wallets, production RPC endpoints and new X account are intentionally absent
+- One user-controlled Solana wallet may serve as owner, Pump creator and recovery destination; this is the approved simple control model
+- Automatic creator-fee collection requires a protected server-side copy of this wallet's keypair. A server compromise can therefore compromise owner authority even though the panel requires exact wallet signatures for user actions
+- Operator and holder-settlement signing keys are separate internal service roles, not additional user-facing administrators
+- The reserve wallet is separate and its private key is not required by the fee-collection service
+- The holder-inventory signer is server-held. Its commitment rules are currently software/accounting controls, not an immutable on-chain vault; this trust boundary must remain explicit in public materials
+- Recovery is limited to identified, project-controlled **uncommitted** receipts. Completed holder transfers cannot be reversed. A published funded allocation must not be silently reclassified as owner funds
 
-## Values required from the owner
+Public addresses may appear in audited configuration once final, but test identities, wallet secrets, authenticated RPC URLs, Bitquery credentials, hidden panel paths and live accounting files must never be committed or copied into a production image
 
-- Solana owner public key
-- Pump creator public key if different from the owner
-- Separately funded operator, holder-settlement, reserve and recovery public keys
-- A mint-wide finalized transfer-history provider and its protected server credential; the current adapter requires Bitquery access with sufficient realtime throughput and a historical backfill procedure
-- Marketing public key if the governance module uses one
-- Primary and independent fallback Solana RPC endpoints
-- New X account URL
+## Production gates
 
-Only public keys enter public configuration. Secrets remain in protected server environment files or service-specific keypair paths
+| Gate | Required evidence |
+|:--|:--|
+| Exact Pump launch | Final creator, CAPITAL mint, MSTRx quote, `creator_fee_bps = 200`, native Pump holder mode off, finalized creation signature and two-RPC agreement |
+| Fee custody | Creator-and-MSTRx vault begins with no unrelated uncollected MSTRx fees; both bonding-curve and PumpSwap collection paths proven |
+| Fee accounting | Exact finalized receipt deltas, deterministic 60/40 raw-unit conservation and no sweep of unrelated creator-wallet MSTRx |
+| MSTRx transfers | Official Token-2022 mint and extensions rechecked; destination ATA creation, transfer hook, pause behavior and simulation verified on the actual asset |
+| Holder history | Mint-wide finalized CAPITAL transfer coverage including a verified backfill route beyond realtime retention; no missing launch or migration movement |
+| Reward delivery | Fully funded epoch, direct payouts to wallets with and without an MSTRx ATA, bounded batches, restart recovery, no duplicate recipient and exact final conservation |
+| Operations | Independent RPCs, provider credentials, alerts, SOL funding, backups, service heartbeats and reproducible recovery runbook |
+| Public disclosure | Website, GitHub, X, final addresses and transaction links agree with deployed state; governance remains labeled inactive until separately released |
+| Security | Dependency review and independent review of custody, offchain accounting and any custom Solana program used with real value |
 
-The current adapter refuses a Bitquery realtime gap longer than six hours. This is a fail-closed boundary, not an automatic historical repair. Confirm provider coverage and a paid or otherwise reliable backfill route before approving mainnet payouts
+Bitquery's realtime transfer window alone is not a historical archive. The indexer must stop on gaps until an independently verified backfill repairs them. No reward epoch should rely on guessed holder balances
 
-The reserve wallet supplies only a public address. Its private key must not be installed on the server. The owner wallet similarly signs only through the private panel and is never imported into a container
+The Pump creator-fee vault is scoped by creator and quote asset rather than by CAPITAL mint. The same creator must not operate another MSTRx-paired Pump coin unless the collection ledger is redesigned to attribute mixed receipts correctly
 
-## Mandatory rehearsal
+## Rehearsal boundary
 
-Use disposable devnet or isolated test identities. Do not use the production creator wallet for rehearsal
+Rehearse with disposable test identities and a separately created Pump token, never the production creator. The current MSTRx integration requires an authorized, bounded mainnet canary for genuine Pump custom-pair receipts and Token-2022 transfer-hook behavior; local tests do not replace this. Keep staging and production keys, state, signatures, epochs, provider limits and service processes isolated. See [Solana staging](solana-staging.md)
 
-Evidence must cover
-
-1. Exact launch configuration validation
-2. Detection and automatic activation of only the intended creator mint after one pre-launch arm signature
-3. Both Pump creator-fee sweep paths
-4. Exact 60/40 receipt conservation
-5. Exact MSTRx 60/40 routing with transfer-hook accounts
-6. Fully funded holder epoch creation
-7. Automatic payout to wallets with and without an existing MSTRx token account
-8. Crash and restart during a batch without duplicate payout
-9. RPC disagreement stopping accounting
-10. Recovery limited to uncommitted balances
-11. Creator-wallet pre-existing MSTRx remaining untouched while only the confirmed collection delta is routed
-12. Public site, Solscan links and heartbeats matching runtime state
-13. Holder transfer-source overlap, outage, and historical backfill without a missing wallet movement
-14. Pump-to-PumpSwap migration with no fee-receipt duplication and no pool wallet receiving a holder payout
+Rehearsal evidence must include interruption during collection, routing and payout; provider disagreement; a holder without a pre-existing MSTRx token account; and graduation from the Pump curve to PumpSwap. Archive every relevant transaction signature and the exact build commit in a protected handoff location
 
 ## Release checks
 
@@ -65,12 +53,6 @@ npm run test:web
 npm run web:build
 ```
 
-Any custom Solana custody or governance program requires an independent external review before public claims or mainnet funding
+These checks prove only that the reviewed source passes its local gates. Before funding or activating production, verify the final provider configuration, live token/program identities, fee custody, transfer-history coverage, wallet roles and dependency advisories, then repeat the end-to-end canary. Do not force a Pump SDK downgrade that removes the required V2 custom-pair interface to make an audit warning disappear
 
-The current production dependency audit reports no critical advisories but does report high and moderate transitive advisories in the official Pump and Solana SDK tree. Do not force the suggested downgrade to Pump SDK 1.1 because it removes the V2 custom-pair interface required by this design. Review and pin an upstream-fixed release before final sign-off, or document a scoped security acceptance after independent review
-
-## Go-live sign-off
-
-Do not activate until all final public addresses are inserted, every service starts from empty Solana state, both RPC providers agree, Token-2022 transfer-hook transfers simulate successfully and public documentation matches deployed behavior
-
-After activation, archive the signed manifest, verified public keys, build commit, test results, external review, server configuration checksum and first end-to-end receipt evidence in the protected handoff location
+Production sign-off must record the final configuration checksum, review approvals, funding limits, test results, transaction evidence, public disclosure snapshot and a named stop/recovery operator

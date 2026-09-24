@@ -38,15 +38,15 @@ Official reference:
 
 ## Selected direction
 
-Route H is the locked visual direction. It is based primarily on Route C:
+Route H informed the original design system. The current approved X identity uses the faceted six-blade orange mark on black, with cinematic orange light, precise technical lines and generous negative space:
 
-- orange square avatar with an original angular black flywheel;
-- oversized condensed typography on a warm-white and orange field;
-- black technical panels, routing lines, and treasury labels from Route B;
-- no standalone `C` monogram;
-- concept source: `assets/brand/concepts/route-h-c-dominant-hybrid.png`.
+- black avatar with the faceted original flywheel mark, readable at small sizes;
+- oversized condensed typography in white and orange on dark surfaces;
+- restrained technical panels and fee-flow lines;
+- no standalone `C` monogram or copied Strategy symbol;
+- approved source files: `assets/brand/final/x-avatar-current-source.jpg` and `assets/brand/final/x-banner-current-source.png`.
 
-The primary X avatar and banner were approved on 2026-09-12.
+The current X avatar and banner were approved on 2026-09-17
 
 Production refinement:
 
@@ -57,9 +57,7 @@ Production refinement:
 - the ticker is excluded from the X banner.
 - `CAPITAL IN MOTION` is highlighted in orange on the black banner panel.
 
-The concept board is only a direction reference. Final avatar, banner, icons,
-backgrounds, and website components must be rebuilt as clean production assets
-at their exact target sizes instead of being cropped from the concept board.
+The earlier concept board is historical direction reference, not the current artwork. New social and site assets should follow the approved final sources and be produced at their intended output sizes
 
 ## Copy style
 
@@ -79,5 +77,4 @@ needed for meaning.
 - Route G: Route B-dominant hybrid with a secondary angular motion trail.
 - Route H: Route C-dominant hybrid with Route B technical structure (selected).
 
-Concept boards are stored in `assets/brand/concepts/`. Route H is selected for
-the final X-sized avatar, banner, and website visual system.
+Concept boards are stored in `assets/brand/concepts/`. The approved production files and usage rules are in [`assets/brand/final/`](../assets/brand/final/)

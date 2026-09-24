@@ -1,6 +1,6 @@
 # FLYWHEEL STRATEGY Solana MSTRx plan
 
-Status: implementation staged, mainnet activation blocked pending production identities, providers and live end-to-end evidence. This document does not authorize a mainnet launch or replace live configuration
+Status: implementation staged, production activation blocked pending final identities, complete transfer-history coverage and live end-to-end evidence. This document does not authorize a mainnet launch or replace live configuration
 
 Verified: 22 September 2026
 
@@ -141,9 +141,9 @@ Wallet connection remains unnecessary for receiving rewards
 
 ## Remaining production blockers
 
-- final Solana owner/creator/recovery address, distinct operator, holder-inventory and reserve public keys, and optional marketing public key
+- final production Solana owner/creator/recovery address, distinct operator, holder-inventory and reserve public keys, and optional marketing public key; disposable staging addresses must not be reused
 - protected server paths for the shared owner/creator keypair and separate operator and holder keypairs; reserve private key stays off-server
-- new X account URL
+- publication checks for the new X account at [@capital_mstr](https://x.com/capital_mstr) and the production website
 - production primary and independent fallback Solana RPC providers
 - production Bitquery or equivalent mint-wide transfer-history coverage, tested against CAPITAL transfers and with a verified backfill route for outages beyond realtime retention
 - final CAPITAL mint created through the verified Pump.fun MSTRx custom-pair flow

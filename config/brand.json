@@ -3,7 +3,7 @@
   "ticker": "CAPITAL",
   "displayTicker": "$CAPITAL",
   "website": "https://flywheelstrategy.xyz",
-  "x": null,
+  "x": "https://x.com/capital_mstr",
   "github": "https://github.com/CapitalFlywheel/flywheel-strategy",
   "status": "solana-mstrx-preparation",
   "lockedAt": "2026-09-12",

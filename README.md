@@ -1,99 +1,60 @@
 <p align="center">
-  <img src="assets/brand/final/x-banner-1500x500.png" alt="FLYWHEEL STRATEGY" width="100%">
-</p>
-
-<p align="center">
-  <img src="assets/brand/final/x-avatar-400.png" alt="FLYWHEEL STRATEGY mark" width="104">
+  <img src="assets/brand/final/x-banner-1500x500.png" alt="FLYWHEEL STRATEGY — fees to MSTR to holders" width="100%">
 </p>
 
 <h1 align="center">FLYWHEEL STRATEGY</h1>
 
 <p align="center">
-  <strong>HOLD CAPITAL&nbsp;&nbsp;·&nbsp;&nbsp;ACCUMULATE MSTRx</strong><br>
-  Real Pump.fun creator-fee receipts build automatic MSTRx rewards and a separate strategic reserve on Solana<br>
+  <strong>HOLD CAPITAL · ACCUMULATE MSTRx</strong><br>
+  A Solana fee-funded reward system designed around direct holder payouts and a separate strategic reserve<br>
   <strong>CAPITAL IN MOTION</strong>
 </p>
 
 <p align="center">
-  <a href="https://flywheelstrategy.xyz"><strong>WEBSITE</strong></a>
+  <a href="https://flywheelstrategy.xyz">Website</a> ·
+  <a href="https://x.com/capital_mstr">X</a> ·
+  <a href="apps/web/public/technical-specification.md">Technical specification</a> ·
+  <a href="SECURITY.md">Security</a>
 </p>
 
----
+> **Status — pre-launch Solana build**
+>
+> The CAPITAL mint has not been published for this build, and the automated fee-to-holder route has not yet passed a live end-to-end mainnet rehearsal. Do not interpret source code or a staging preview as proof of active rewards. The previous Robinhood Chain system remains in this repository as legacy history, not as the Solana launch configuration
 
-## THE SOLANA FLYWHEEL
+## How the flywheel is designed to work
 
-| 01 — TRADE | 02 — COLLECT | 03 — ROUTE | 04 — DISTRIBUTE |
+| Trade | Collect | Separate | Deliver |
 |:--|:--|:--|:--|
-| CAPITAL trades against the official MSTRx custom pair | Fixed 2% creator fees are collected from both Pump phases | Actual MSTRx receipts split exactly 60/40 | Funded rewards are sent automatically to eligible holders |
+| CAPITAL trades against the official Solana MSTRx custom pair on Pump.fun | A configured 2% creator fee accrues in MSTRx across the Pump curve and PumpSwap phases | **Actual collected receipts**, not projected volume, are accounted 60% to holder rewards and 40% to the reserve | Funded MSTRx rewards are sent directly to eligible wallets in bounded batches |
 
 ```text
-PUMP.FUN 2% CREATOR FEE IN MSTRx
-             ├── 60% HOLDER REWARDS
-             └── 40% STRATEGIC RESERVE
+CAPITAL / MSTRx trades
+        ↓
+project-controlled Pump creator-fee receipts in MSTRx
+        ├── 60% → funded holder inventory → automatic MSTRx payouts
+        └── 40% → separate MSTRx strategic reserve
 ```
 
-## FEE FLOW
+The 2% setting is the **creator fee**, not a claim about every fee a trader pays. The 60/40 split applies to MSTRx actually collected by the project. SOL for transactions, rent and operations is funded separately. Rewards depend on trading activity and successful operation; they are not guaranteed
 
-CAPITAL uses Pump.fun's supported MSTRx custom pair with a fixed `creator_fee_bps` of `200`, equal to 2% of each trade in the quote asset
+Pump's [supported-pair list](https://pump.fun/docs/custom-pairs) identifies the MSTRx mint and explains that paired-asset fees are paid in the quote asset. Pair eligibility, issuer restrictions and platform terms must be checked again before launch
 
-Every finalized creator-fee receipt controlled by the project is split exactly as follows
+## Holder experience
 
-| Allocation | Share of actual project receipts | Purpose |
-|:--|--:|:--|
-| Holder rewards | **60%** | MSTRx sent automatically to eligible holders |
-| Strategic reserve | **40%** | Isolated MSTRx governed through the restricted reserve system |
+- Reward weight combines CAPITAL balance and exact hold time, with newest lots consumed first on partial sales
+- Eligible wallets are intended to receive MSTRx without connecting to this website, signing a claim or paying payout fees
+- A complete epoch must be funded before distribution; batches are recorded for restart-safe, duplicate-resistant delivery
+- Finalized holder history and fee receipts are checked against independent RPC providers; uncertain data stops progression instead of estimating payouts
 
-RPC, rent, priority fees and all other operating costs are funded separately and are never deducted from the 60/40 allocation
+The reward asset is MicroStrategy xStock (`MSTRx`) on Solana, Token-2022 mint `XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ`. Its raw units and transfer-hook behavior are handled explicitly in the [technical specification](apps/web/public/technical-specification.md)
 
-## AUTOMATIC HOLDER REWARDS
+## Reserve and trust boundaries
 
-Reward weight combines CAPITAL balance with exact hold time
+The reserve is accounted separately from holder payout inventory. A restricted Solana governance program has **not** been deployed or audited, so public reserve voting and execution are disabled. The reserve must not be described as redeemable backing or a guaranteed holder claim
 
-- No claim page, wallet connection, signature or holder-paid gas is required
-- The complete epoch is funded before the first payout batch
-- Partial sales consume newest lots first
-- Recipient batches are deterministic and idempotent
-- Every raw MSTRx unit must reconcile before an epoch can finalize
-- Two independent RPC providers must agree on finalized state before accounting advances
+The owner and Pump creator can be one wallet. Automatic creator-fee collection requires a protected server-side copy of that wallet's key; a server compromise could therefore compromise owner authority. The holder inventory is also controlled by an operational signing key, and its current commitment rules are enforced by software and accounting rather than an immutable on-chain vault. Completed payouts cannot be recalled, while the documented recovery path is limited to uncommitted project-controlled receipts. See the [architecture](docs/architecture.md) and [Solana plan](docs/solana-mstrx-plan.md) for the exact boundaries
 
-The reward asset is the official Solana MicroStrategy xStock token
-
-- Symbol: `MSTRx`
-- Mint: `XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ`
-- Program: Token-2022
-
-## PUMP.FUN INTEGRATION
-
-The standard launch configuration is
-
-- Quote asset: official Solana MSTRx
-- Pair: CAPITAL / MSTRx
-- Creator fee: fixed 2%
-- Pump native holder rewards: disabled
-- Project creator fees: collected from both the bonding curve and PumpSwap creator vault
-- Token creation and first buy: one wallet-approved Pump.fun transaction when supported by the final launch interface
-
-The CAPITAL mint does not exist until the real Pump.fun launch. No production deployer is used for rehearsals
-
-## GOVERNANCE AND CUSTODY
-
-Holder reward inventory, strategic reserve inventory, operating SOL and marketing funds remain separate
-
-Governance is planned to execute only published reserve actions through a restricted Solana program. Public voting and execution are disabled until that program has been audited and deployed
-
-The owner panel exposes separate signed actions for launch verification, launch detection, both fee routes, routing pause, epoch preparation, automatic distribution, finalization and recovery of uncommitted balances. One pre-launch arm signature is enough for the detector to verify, publish and activate the exact Pump mint
-
-Committed holder rewards cannot be recovered by the owner
-
-## CURRENT STATUS
-
-The repository contains the Solana public site, wallet layer, fixed 2% custom-pair validation, one-signature launch detector, exact 60/40 allocation, both Pump fee collection paths, Token-2022 transfer-hook support, a mint-wide holder indexer, restart-safe automatic payout batches, RPC-consensus guards and private control surface
-
-The old Robinhood Chain implementation is retained only as legacy audit history. Its addresses, manifests, cached epochs and bot state are not valid Solana production configuration
-
-No mainnet CAPITAL mint, strategy program or governance program is published yet
-
-## VERIFY LOCALLY
+## Verify the implementation
 
 Requirements: Node.js 20+ and npm
 
@@ -105,37 +66,25 @@ npm run test:web
 npm run web:build
 ```
 
-Start the local site
-
-```bash
-npm run web:dev
-```
-
-## REPOSITORY MAP
-
-| Path | Purpose |
+| Location | What it contains |
 |:--|:--|
-| `services/solana/` | Fixed 2% launch validation, finalized RPC consensus, Pump MSTRx collection, 60/40 routing and automatic transfer accounting |
-| `services/indexer/` | Shared deterministic hold-time and reward-accounting primitives |
-| `services/api/` | Public site server and wallet-signed private control queue |
-| `apps/web/` | Solana holder website, documentation, governance preview and owner panel |
-| `config/solana-mainnet.json` | Public Solana programs, assets and approved economics |
-| `contracts/`, `services/keeper/` | Legacy Robinhood implementation retained for audit history, not Solana deployment |
+| [`services/solana/`](services/solana/) | Pump launch verification, fee collection, 60/40 accounting, holder indexing and direct payouts |
+| [`services/api/`](services/api/) | Public data server and wallet-signed private control requests |
+| [`apps/web/`](apps/web/) | Solana website and read-only holder information |
+| [`config/solana-mainnet.json`](config/solana-mainnet.json) | Public Solana asset, program and target economics configuration |
+| [`assets/brand/final/`](assets/brand/final/) | Approved avatar, banner and visual identity sources |
+| [`contracts/`](contracts/) and [`services/keeper/`](services/keeper/) | Legacy Robinhood Chain implementation, excluded from the Solana runtime |
 
-## SECURITY
+The [production handoff](docs/production-handoff.md) lists the evidence required before real-value operation. Public addresses, transactions and payout records should be checked against deployed state when available
 
-Secrets are not stored in this repository
+## Repository safety
 
-Private keys, seed phrases, RPC credentials, server passwords, SSH keys, hidden administration URLs and live operational state must remain outside Git
+Private keys, seed phrases, authenticated RPC URLs, API credentials, server access data, hidden administration paths and live state do **not** belong in Git. The publishable-file secret check runs locally with `npm run security:secrets` and in GitHub Actions. Report suspected exposure privately under the [security policy](SECURITY.md)
 
-`npm run security:secrets` scans every publishable file before a public push
-
-Provider setup and the remaining mainnet sign-off are documented in [`docs/solana-provider-setup.md`](docs/solana-provider-setup.md) and [`docs/production-handoff.md`](docs/production-handoff.md)
-
----
+FLYWHEEL STRATEGY is an independent project and is not affiliated with Strategy Inc, the MSTRx issuer or Pump.fun
 
 <p align="center">
-  <img src="assets/brand/final/x-avatar-400.png" alt="FLYWHEEL STRATEGY mark" width="56"><br>
+  <img src="assets/brand/final/x-avatar-400.png" alt="Faceted orange FLYWHEEL STRATEGY mark" width="64"><br>
   <strong>CAPITAL IN MOTION</strong><br>
-  FEES&nbsp;&nbsp;→&nbsp;&nbsp;MSTRx&nbsp;&nbsp;→&nbsp;&nbsp;HOLDERS
+  <a href="https://flywheelstrategy.xyz">flywheelstrategy.xyz</a> · <a href="https://x.com/capital_mstr">@capital_mstr</a>
 </p>

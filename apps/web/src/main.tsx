@@ -128,7 +128,7 @@ function SocialLinks({ links }: { links: PublicLinks }) {
     {links.github && <a className="topbar-social social-icon-link" href={links.github} target="_blank" rel="noreferrer" aria-label="GitHub"><GithubLogoIcon /></a>}
     {links.x
       ? <a className="topbar-social social-x-link" href={links.x} target="_blank" rel="noreferrer" aria-label="X"><XLogoIcon /></a>
-      : <span className="topbar-social social-x-link social-link-pending" title="New X account will be published here"><XLogoIcon /></span>}
+      : <span className="topbar-social social-x-link social-link-pending" title="X link temporarily unavailable"><XLogoIcon /></span>}
   </>;
 }
 
