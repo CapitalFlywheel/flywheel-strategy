@@ -7,15 +7,16 @@ type Check = { id: string; status: "pass" | "block"; code: string };
 export type StagingWebReadiness = {
   phase: "isolated-solana-staging-web" | "public-solana-web";
   readOnlyRpcReady: boolean;
-  voteRelayReleased: boolean;
+  offchainVotingApiReady: boolean;
+  legacyTransactionVoteDisabled: boolean;
   voteEndToEndVerified: false;
   checks: Check[];
   note: string;
 };
 
-async function smallJsonResponse(response: Response): Promise<unknown> {
+async function smallJsonResponse(response: Response, maxBytes = MAX_REPLY_BYTES): Promise<unknown> {
   const advertised = response.headers.get("content-length");
-  if (advertised !== null && Number(advertised) > MAX_REPLY_BYTES) throw new Error("WEB_RPC_REPLY_TOO_LARGE");
+  if (advertised !== null && Number(advertised) > maxBytes) throw new Error("WEB_RPC_REPLY_TOO_LARGE");
   if (!response.body) throw new Error("WEB_RPC_REPLY_EMPTY");
   const reader = response.body.getReader();
   const parts: Uint8Array[] = [];
@@ -25,7 +26,7 @@ async function smallJsonResponse(response: Response): Promise<unknown> {
       const part = await reader.read();
       if (part.done) break;
       length += part.value.byteLength;
-      if (length > MAX_REPLY_BYTES) throw new Error("WEB_RPC_REPLY_TOO_LARGE");
+      if (length > maxBytes) throw new Error("WEB_RPC_REPLY_TOO_LARGE");
       parts.push(part.value);
     }
   } finally { await reader.cancel().catch(() => undefined); }
@@ -37,7 +38,8 @@ export async function inspectSolanaWeb(target: "staging" | "public", fetcher: ty
   const origin = target === "staging" ? STAGING_ORIGIN : PUBLIC_ORIGIN;
   const checks: Check[] = [];
   let rpcReady = false;
-  let voteRelayReleased = false;
+  let offchainVotingApiReady = false;
+  let legacyTransactionVoteDisabled = false;
   try {
     const response = await fetcher(`${origin}/api/solana/rpc`, {
       method: "POST",
@@ -55,24 +57,31 @@ export async function inspectSolanaWeb(target: "staging" | "public", fetcher: ty
     code: rpcReady ? "OK" : "WEB_PUBLIC_RPC_UNAVAILABLE" });
 
   try {
-    // GET can never broadcast a transaction. Disabled route returns 503;
-    // an enabled route rejects this wrong method with 405.
+    const response = await fetcher(`${origin}/api/solana/offchain-governance`, {
+      method: "GET", signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (response.status === 200 && response.headers.get("content-type")?.startsWith("application/json")) {
+      const body = await smallJsonResponse(response, 8_192) as { ballot?: unknown };
+      offchainVotingApiReady = body && Object.prototype.hasOwnProperty.call(body, "ballot");
+    }
+  } catch { /* A failed route is a blocker, not a release signal. */ }
+  checks.push({ id: "running-web-offchain-vote-api", status: offchainVotingApiReady ? "pass" : "block",
+    code: offchainVotingApiReady ? "OK" : "WEB_OFFCHAIN_VOTE_API_UNAVAILABLE" });
+
+  try {
     const response = await fetcher(`${origin}/api/solana/governance-vote`, {
       method: "GET", signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (response.status === 405 && response.headers.get("content-type")?.startsWith("application/json")) {
-      const body = await smallJsonResponse(response) as { error?: unknown };
-      voteRelayReleased = body?.error === "method_not_allowed";
-    }
-  } catch { /* A failed route is a blocker, not a release signal. */ }
-  checks.push({ id: "running-web-vote-relay-release", status: voteRelayReleased ? "pass" : "block",
-    code: voteRelayReleased ? "OK" : "WEB_VOTE_RELAY_UNAVAILABLE_OR_DISABLED" });
+    legacyTransactionVoteDisabled = response.status === 503;
+  } catch { /* Do not assume an unknown route is safe. */ }
+  checks.push({ id: "legacy-transaction-vote-disabled", status: legacyTransactionVoteDisabled ? "pass" : "block",
+    code: legacyTransactionVoteDisabled ? "OK" : "LEGACY_VOTE_ROUTE_UNVERIFIED" });
 
   return {
     phase: target === "staging" ? "isolated-solana-staging-web" : "public-solana-web",
-    readOnlyRpcReady: rpcReady, voteRelayReleased,
+    readOnlyRpcReady: rpcReady, offchainVotingApiReady, legacyTransactionVoteDisabled,
     voteEndToEndVerified: false, checks,
-    note: "This probes the running web route, including the same-origin RPC relay; it never signs or broadcasts. Even a released vote route does not prove the browser wallet path or finalized onchain voting. Those require an authorized canary and real-device checks",
+    note: "This checks the read-only RPC, offchain ballot API and disabled historical transaction vote route. It does not prove holder signatures or live tallying; those require a test token and a real wallet",
   };
 }
 
@@ -83,7 +92,7 @@ export async function inspectSolanaStagingWeb(fetcher: typeof fetch = fetch) {
 async function main() {
   const report = await inspectSolanaWeb(process.argv.includes("--public") ? "public" : "staging");
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  if (!report.readOnlyRpcReady || !report.voteRelayReleased) process.exitCode = 1;
+  if (!report.readOnlyRpcReady || !report.offchainVotingApiReady || !report.legacyTransactionVoteDisabled) process.exitCode = 1;
 }
 
 if (process.argv[1]?.endsWith("solana-staging-web-readiness.ts")) {
