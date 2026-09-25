@@ -152,6 +152,7 @@ function Header({ links, docs = false }: { links: PublicLinks; docs?: boolean })
     <nav aria-label="Primary navigation">
       <a href="/#mechanics">How it works</a>
       <a href="/#rewards">Rewards</a>
+      <a href="/governance" target="_blank" rel="noreferrer">Governance</a>
       <a href="/docs" target={docs ? undefined : "_blank"} rel="noreferrer">Documentation</a>
     </nav>
     <SocialLinks links={links} />
@@ -167,6 +168,7 @@ function Footer({ links }: { links: PublicLinks }) {
     <div className="footer-brand"><FlywheelMark className="footer-mark" /><span><b>FLYWHEEL STRATEGY</b><small>CAPITAL IN MOTION</small></span></div>
     <div className="footer-links">
       <a href="/docs" target="_blank" rel="noreferrer">Documentation ↗</a>
+      <a href="/governance" target="_blank" rel="noreferrer">Governance ↗</a>
       {links.github && <a href={links.github} target="_blank" rel="noreferrer">GitHub ↗</a>}
       {links.x && <a href={links.x} target="_blank" rel="noreferrer">X ↗</a>}
     </div>
