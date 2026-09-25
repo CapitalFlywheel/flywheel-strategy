@@ -6,10 +6,10 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { nonceManager, privateKeyToAccount } from "viem/accounts";
 import { reimburseGas } from "./reimburse";
 import { writeHeartbeat } from "./heartbeat";
-import { rpcTransport } from "../shared/rpc";
+import { rpcTransport, transactionRpcTransport } from "../shared/rpc";
 import { advancePonsLifecycle, type PonsLifecycleStatus } from "./ponsLifecycle";
 
 const governanceAbi = [
@@ -95,11 +95,15 @@ function required(name: string): string {
 const governance = required("GOVERNANCE_ADDRESS") as Address;
 const projectToken = required("PROJECT_TOKEN_ADDRESS") as Address;
 const projectTokenLockVault = required("PROJECT_TOKEN_LOCK_VAULT_ADDRESS") as Address;
-const account = privateKeyToAccount(required("KEEPER_PRIVATE_KEY") as Hex);
+const account = privateKeyToAccount(required("KEEPER_PRIVATE_KEY") as Hex, { nonceManager });
 const keeperVault = process.env.KEEPER_VAULT_ADDRESS as Address | undefined;
 const transport = rpcTransport(chain.rpcUrls.default.http[0], process.env.ROBINHOOD_RPC_FALLBACK_URL);
 const publicClient = createPublicClient({ chain, transport });
-const walletClient = createWalletClient({ chain, transport, account });
+const walletClient = createWalletClient({
+  chain,
+  transport: transactionRpcTransport(chain.rpcUrls.default.http[0]),
+  account,
+});
 
 let latestPonsStatus: PonsLifecycleStatus | undefined;
 let nextPonsCheckAt = 0;

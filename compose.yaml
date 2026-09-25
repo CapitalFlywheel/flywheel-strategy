@@ -2,7 +2,7 @@ x-app: &app
   build:
     context: .
     args:
-      VITE_REOWN_PROJECT_ID: ${VITE_REOWN_PROJECT_ID:-}
+      VITE_SOLANA_WALLETCONNECT_PROJECT_ID: ${VITE_SOLANA_WALLETCONNECT_PROJECT_ID:-${VITE_REOWN_PROJECT_ID:-}}
   image: flywheel-strategy-solana:local
   restart: unless-stopped
   user: "1000:1000"
@@ -41,7 +41,8 @@ services:
   solana-control-runner:
     <<: *app
     profiles: ["staging-automation"]
-    command: npm run solana:control-runner
+    init: true
+    command: ["sh", "scripts/solana-singleton.sh", "control-runner"]
     env_file:
       - .env.solana
     environment:
@@ -55,7 +56,8 @@ services:
   solana-holder-indexer:
     <<: *app
     profiles: ["staging-automation"]
-    command: npm run solana:holder-indexer
+    init: true
+    command: ["sh", "scripts/solana-singleton.sh", "holder-indexer"]
     env_file:
       - .env.solana
     environment:

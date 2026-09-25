@@ -1,13 +1,23 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import type { Adapter } from "@solana/wallet-adapter-base";
+import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { WalletModalProvider, WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { Connection, Transaction } from "@solana/web3.js";
+import bs58 from "bs58";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import "./styles.css";
 import "./redesign.css";
 import { formatMstrxRaw } from "./chain";
 import { solanaMainnet, solscanAccount, solscanToken, solscanTransaction } from "./network";
 import { isSolanaPublicKey, shortPublicKey } from "./wallets";
+import { createSolanaWalletConnectAdapter, solanaWalletConnectProjectId } from "./solanaWalletConnect";
+import { awaitFinalizedVote } from "./voteConfirmation";
+import {
+  buildGovernanceVoteInstruction, canCastGovernanceVote, formatMstrxExact, formatRawTokenExact, governanceProposalIdFromUrl,
+  loadVerifiedGovernance, loadWalletGovernance,
+  type GovernanceWalletProof, type GovernanceVoteRecord, type VerifiedGovernance,
+} from "./governanceClient";
 
 declare global {
   interface Window { __FLYWHEEL_ADMIN__?: boolean; __FLYWHEEL_ADMIN_API__?: string }
@@ -24,6 +34,8 @@ interface RuntimeConfig {
   reserveVaultTokenAccount: string;
   strategyProgram?: string;
   governanceProgram?: string;
+  governanceProgramCodeSha256?: string;
+  governanceAccountSchemaVersion?: number;
   marketingWallet?: string;
   launchedAtSlot?: number;
 }
@@ -56,8 +68,22 @@ const governanceActions = [
   ["BUYBACK + BURN", "Purchase CAPITAL and remove it from circulation"],
   ["BUYBACK + LOCK", "Purchase CAPITAL and lock it for a selected term"],
   ["LOCK MSTRx", "Time-lock MSTRx inside the strategic reserve"],
-  ["MARKETING", "Use the voted reserve amount for the disclosed wallet"],
+  ["MARKETING", "Sell voted MSTRx for SOL and send the proceeds to the fixed wallet"],
 ];
+
+// Release only after the selected custody model, reserve executor, program,
+// audit, public config and signed wallet flow have passed the launch gate.
+// The current program prototype records votes but cannot execute the reserve.
+const VOTE_TRANSACTIONS_RELEASED = false;
+
+const governanceActionCopy: Record<string, [string, string]> = {
+  ACCUMULATE: ["ACCUMULATE MSTRx", "Leave the declared reserve amount untouched"],
+  BUYBACK_HOLD: ["BUYBACK + HOLD", "Buy CAPITAL for permanent public custody"],
+  BUYBACK_BURN: ["BUYBACK + BURN", "Buy CAPITAL and burn the acquired tokens"],
+  BUYBACK_LOCK: ["BUYBACK + LOCK", "Buy CAPITAL and lock it for the selected term"],
+  LOCK_MSTRX: ["LOCK MSTRx", "Lock the reserve asset for the selected term"],
+  MARKETING_SALE: ["MARKETING", "Sell voted MSTRx for SOL and send the proceeds to the fixed disclosed wallet"],
+};
 
 function FlywheelMark({ className = "" }: { className?: string }) {
   return <img className={className} src="/visuals/logo-rotation.gif" alt="FLYWHEEL STRATEGY" />;
@@ -126,11 +152,13 @@ function Header({ links, docs = false }: { links: PublicLinks; docs?: boolean })
     <nav aria-label="Primary navigation">
       <a href="/#mechanics">How it works</a>
       <a href="/#rewards">Rewards</a>
-      <a href="/governance" target="_blank" rel="noreferrer">Governance</a>
       <a href="/docs" target={docs ? undefined : "_blank"} rel="noreferrer">Documentation</a>
     </nav>
     <SocialLinks links={links} />
-    <div className="topbar-action">{docs ? <a className="topbar-return" href="/">Back to site</a> : <a className="topbar-return" href="/#rewards">Rewards</a>}</div>
+    <div className="topbar-action">
+      {docs && <a className="topbar-return" href="/">Back to site</a>}
+      <WalletMultiButton className="public-wallet-button" />
+    </div>
   </header>;
 }
 
@@ -139,7 +167,6 @@ function Footer({ links }: { links: PublicLinks }) {
     <div className="footer-brand"><FlywheelMark className="footer-mark" /><span><b>FLYWHEEL STRATEGY</b><small>CAPITAL IN MOTION</small></span></div>
     <div className="footer-links">
       <a href="/docs" target="_blank" rel="noreferrer">Documentation ↗</a>
-      <a href="/governance" target="_blank" rel="noreferrer">Governance ↗</a>
       {links.github && <a href={links.github} target="_blank" rel="noreferrer">GitHub ↗</a>}
       {links.x && <a href={links.x} target="_blank" rel="noreferrer">X ↗</a>}
     </div>
@@ -357,21 +384,18 @@ function App() {
     </section>
 
     <section className="governance-callout">
-      <div><span>06 · RESERVE POLICY</span><h2>RESERVE GOVERNANCE</h2><p>Voting is disabled · The strategic reserve remains separate from holder reward inventory</p></div>
-      <a href="/governance" target="_blank" rel="noreferrer">Open governance ↗</a>
+      <div><span>06 · RESERVE</span><h2>STRATEGIC RESERVE</h2><p>40% of actual MSTRx creator-fee receipts flow to a separate project-controlled reserve wallet</p></div>
     </section>
 
     <section className="transparency" id="transparency">
       <span>PUBLIC BY DEFAULT</span>
-      <h2>Verify the CAPITAL mint, MSTRx vaults and holder payouts on Solana</h2>
+      <h2>Verify the CAPITAL mint, MSTRx wallets and holder payouts on Solana</h2>
       <p>{config ? "Verified Solana addresses link directly to the public explorer" : "Only verified Solana addresses and finalized activity are published"}</p>
       <div className="project-contract-card"><span>CAPITAL TOKEN MINT</span>{config ? <a href={solscanToken(config.projectMint)} target="_blank" rel="noreferrer">{config.projectMint} ↗</a> : <b>NO VERIFIED MINT AVAILABLE</b>}</div>
       {config && <div className="address-grid">{[
         ["Creator-fee recipient", config.creatorFeeRecipient],
         ["Reward vault", config.rewardVaultTokenAccount],
         ["Strategic reserve", config.reserveVaultTokenAccount],
-        ["Strategy program", config.strategyProgram],
-        ["Governance program", config.governanceProgram],
         ["Marketing wallet", config.marketingWallet],
       ].filter((entry): entry is [string, string] => Boolean(entry[1])).map(([label, address]) => <a key={label} href={solscanAccount(address)} target="_blank" rel="noreferrer"><b>{label}</b><span>{shortPublicKey(address)} ↗</span></a>)}</div>}
       <a className="docs-link" href="/docs" target="_blank" rel="noreferrer">Open full documentation ↗</a>
@@ -439,23 +463,252 @@ function DocumentationPage() {
     void fetch("/technical-specification.md", { cache: "no-store" }).then((response) => response.ok ? response.text() : Promise.reject()).then(setMarkdown).catch(() => setMarkdown("# Documentation unavailable"));
   }, []);
   const headings = markdown.split(/\r?\n/).map((line) => /^##\s+(.+)$/.exec(line.trim())?.[1]).filter((heading): heading is string => Boolean(heading));
-  return <main className="docs-page"><Header links={links} docs /><section className="subpage-hero docs-hero"><span>PUBLIC DOCUMENTATION</span><h1>HOW THE SOLANA FLYWHEEL WORKS</h1><p>Pump.fun fees, MSTRx rewards, holder weight, governance and every important rule in one place</p></section><div className="docs-layout"><aside><b>CONTENTS</b>{headings.map((heading) => <a href={`#${headingId(heading)}`} key={heading}>{plainText(heading)}</a>)}</aside><article className="documentation-body">{markdown ? renderDocumentation(markdown) : <p>Loading documentation</p>}</article></div><Footer links={links} /></main>;
+  return <main className="docs-page"><Header links={links} docs /><section className="subpage-hero docs-hero"><span>PUBLIC DOCUMENTATION</span><h1>HOW THE SOLANA FLYWHEEL WORKS</h1><p>Pump.fun fees, MSTRx rewards, holder weight and reserve custody in one place</p></section><div className="docs-layout"><aside><b>CONTENTS</b>{headings.map((heading) => <a href={`#${headingId(heading)}`} key={heading}>{plainText(heading)}</a>)}</aside><article className="documentation-body">{markdown ? renderDocumentation(markdown) : <p>Loading documentation</p>}</article></div><Footer links={links} /></main>;
 }
 
 function GovernancePage() {
   const links = usePublicLinks();
-  return <main><Header links={links} /><section className="subpage-hero governance-hero"><span>SOLANA RESERVE POLICY</span><h1>RESERVE GOVERNANCE</h1><p>Public voting is disabled · No reviewed Solana execution program is deployed</p></section><section className="panel governance governance-page-panel"><div className="panel-head"><div><span className="section-number">NO ACTIVE VOTE</span><h2>No active proposal</h2></div><span className="pill">VOTING DISABLED</span></div><div className="option-grid">{governanceActions.map(([title, detail], index) => <div key={title}><span>0{index + 1}</span><b>{title}</b><small>{detail}</small></div>)}</div><footer><span>Illustrative reserve actions, not live voting options</span><span>The reserve is held separately from funded holder rewards</span></footer></section><Footer links={links} /></main>;
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction, signTransaction } = useWallet();
+  const [state, setState] = useState<VerifiedGovernance>();
+  const [runtime, setRuntime] = useState<RuntimeConfig>();
+  const [proof, setProof] = useState<GovernanceWalletProof>();
+  const [voteRecord, setVoteRecord] = useState<GovernanceVoteRecord>();
+  const [voteRecordAddress, setVoteRecordAddress] = useState<string>();
+  const [voteSignature, setVoteSignature] = useState<string>();
+  const [selectedOption, setSelectedOption] = useState<number>();
+  const [loading, setLoading] = useState(true);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("No verified active proposal");
+  const [actionError, setActionError] = useState("");
+  const [submittedSignature, setSubmittedSignature] = useState("");
+  const [refreshCounter, setRefreshCounter] = useState(0);
+
+  useEffect(() => {
+    document.title = "GOVERNANCE — FLYWHEEL STRATEGY";
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") setRefreshCounter((value) => value + 1);
+    };
+    const timer = window.setInterval(refreshIfVisible, 60_000);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshIfVisible); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setActionError("");
+    const refresh = async () => {
+      try {
+        const requestedId = governanceProposalIdFromUrl(window.location.search);
+        const response = await fetch("/config.json", { cache: "no-store" });
+        if (!response.ok) throw new Error("No verified CAPITAL mint is published");
+        const value: unknown = await response.json();
+        if (!validRuntimeConfig(value)) throw new Error("No verified CAPITAL mint is published");
+        if (cancelled) return;
+        setRuntime(value);
+        if (!value.governanceProgram) {
+          setState(undefined);
+          setStatusMessage("No Solana governance program is published");
+          return;
+        }
+        const verified = await loadVerifiedGovernance(connection, value, requestedId);
+        if (cancelled) return;
+        setState(verified);
+        setStatusMessage(verified ? "" : "No onchain proposal is active");
+      } catch (error) {
+        if (cancelled) return;
+        setState(undefined);
+        setRuntime(undefined);
+        setStatusMessage(error instanceof Error ? error.message : "Governance data unavailable");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void refresh();
+    return () => { cancelled = true; };
+  }, [connection, refreshCounter]);
+
+  useEffect(() => { setSelectedOption(undefined); }, [state?.proposalAddress.toBase58()]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setProof(undefined);
+    setVoteRecord(undefined);
+    setVoteRecordAddress(undefined);
+    setVoteSignature(undefined);
+    setWalletLoading(Boolean(state && publicKey));
+    if (!state || !publicKey) return () => { cancelled = true; };
+    const refreshWallet = async () => {
+      try {
+        const wallet = await loadWalletGovernance(connection, state, publicKey);
+        if (cancelled) return;
+        setProof(wallet.proof);
+        setVoteRecord(wallet.voteRecord);
+        setVoteRecordAddress(wallet.voteRecordAddress.toBase58());
+        if (wallet.voteRecord) {
+          const signatures = await connection.getSignaturesForAddress(wallet.voteRecordAddress, { limit: 5 }, "finalized");
+          if (!cancelled) setVoteSignature(signatures.find((entry) => entry.err === null && entry.confirmationStatus === "finalized")?.signature);
+        }
+      } catch (error) {
+        if (!cancelled) setActionError(error instanceof Error ? error.message : "Wallet vote data unavailable");
+      } finally {
+        if (!cancelled) setWalletLoading(false);
+      }
+    };
+    void refreshWallet();
+    return () => { cancelled = true; };
+  }, [connection, state, publicKey]);
+
+  const canVote = canCastGovernanceVote(state, proof, Boolean(voteRecord), VOTE_TRANSACTIONS_RELEASED);
+  const submitVote = async () => {
+    if (!state || !runtime || !publicKey || !proof || selectedOption === undefined || !canVote) return;
+    setActionError("");
+    try {
+      // Recheck all onchain accounts and the wallet's proof immediately before
+      // asking the wallet to sign. A stale rendered card never authorizes a vote.
+      const fresh = await loadVerifiedGovernance(connection, runtime, state.proposal.id);
+      if (!fresh || fresh.programId.toBase58() !== state.programId.toBase58()
+        || fresh.proposalAddress.toBase58() !== state.proposalAddress.toBase58()
+        || fresh.proposal.merkleRoot !== state.proposal.merkleRoot) throw new Error("Proposal changed before signing");
+      const wallet = await loadWalletGovernance(connection, fresh, publicKey);
+      if (!wallet.proof || wallet.voteRecord || !canCastGovernanceVote(fresh, wallet.proof, false, VOTE_TRANSACTIONS_RELEASED)) {
+        throw new Error("Voting window, eligibility or one-vote state changed");
+      }
+      const instruction = await buildGovernanceVoteInstruction(fresh, publicKey, selectedOption, wallet.proof);
+      const latest = await connection.getLatestBlockhash("finalized");
+      const transaction = new Transaction({ feePayer: publicKey, recentBlockhash: latest.blockhash }).add(instruction);
+      // Never hand a signed vote to the general read-only RPC. Wallets that
+      // expose signTransaction use the exact-vote endpoint directly; adapters
+      // with only sendTransaction receive that endpoint as their connection.
+      const voteConnection = new Connection(solanaMainnet.voteRpcUrl, "finalized");
+      let signature: string;
+      if (signTransaction) {
+        const signed = await signTransaction(transaction);
+        const raw = signed.serialize({ requireAllSignatures: true, verifySignatures: true });
+        if (!signed.signature) throw new Error("Wallet did not sign the vote");
+        // A timeout can leave broadcast status uncertain. Keep this signed
+        // signature visible so the holder can check finality before retrying.
+        setSubmittedSignature(bs58.encode(signed.signature));
+        signature = await voteConnection.sendRawTransaction(raw,
+          { skipPreflight: false, preflightCommitment: "finalized", maxRetries: 0 });
+      } else {
+        signature = await sendTransaction(transaction, voteConnection,
+          { skipPreflight: false, preflightCommitment: "finalized", maxRetries: 0 });
+      }
+      // Preserve the signature even if status becomes temporarily unprovable.
+      // The public relay does not expose a WebSocket endpoint for subscriptions.
+      setSubmittedSignature(signature);
+      await awaitFinalizedVote(connection, signature, latest.lastValidBlockHeight);
+      setRefreshCounter((value) => value + 1);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Vote transaction failed");
+    }
+  };
+
+  const proposal = state?.proposal;
+  const quorum = proposal ? (proposal.totalAvailableWeight * 700n + 9_999n) / 10_000n : 0n;
+  const proposalUrl = proposal ? `${window.location.origin}/governance?proposal=${proposal.id}` : "";
+  const finalStatus = !proposal ? "VOTING DISABLED" : proposal.status === 4
+    ? proposal.options[proposal.winningOption].action === "ACCUMULATE" ? "ACCUMULATE · RESERVE RELEASED"
+      : state?.executionReceipt ? `${state.executionReceipt.action.replaceAll("_", " ")} · RECEIPT VERIFIED`
+      : state?.lock?.state === "RELEASED" ? "MSTRx LOCK RELEASED" : state?.lock?.state === "MATURED_AWAITING_RELEASE" ? "MSTRx LOCK MATURED" : "MSTRx LOCK VERIFIED"
+    : proposal.status === 5 ? "SUPERSEDED BY HOLDER RE-VOTE"
+      : proposal.status === 7 ? "RE-VOTE · NO QUORUM · RESERVE HELD"
+        : proposal.status === 8 ? "RE-VOTE · TIE · RESERVE HELD"
+          : proposal.status === 1 ? "VOTE PASSED · EXECUTION UNAVAILABLE"
+            : proposal.status === 2 ? "REJECTED · NO QUORUM" : proposal.status === 3 ? "REJECTED · TIE"
+              : state!.chainTime < proposal.startsAt ? proposal.status === 6 ? "RE-VOTE · SNAPSHOT REVIEW WINDOW" : "SNAPSHOT REVIEW WINDOW · VOTING NOT OPEN"
+                : state!.chainTime >= proposal.endsAt ? proposal.status === 6 ? "RE-VOTE CLOSED · AWAITING FINALIZATION" : "VOTING CLOSED · AWAITING FINALIZATION"
+                  : proposal.status === 6 ? "RE-VOTE · RESERVE COMMITTED · VOTING NOT RELEASED"
+                  : "RESERVE COMMITTED · VOTING NOT RELEASED";
+
+  return <main><Header links={links} />
+    <section className="subpage-hero governance-hero"><span>SOLANA RESERVE POLICY</span><h1>RESERVE GOVERNANCE</h1><p>One wallet · One vote · Published CAPITAL balance-time snapshot</p></section>
+    <section className="panel governance governance-page-panel">
+      <div className="panel-head"><div><span className="section-number">{proposal ? `PROPOSAL ${proposal.id}` : "NO ACTIVE VOTE"}</span><h2>{proposal ? "Reserve proposal" : "No active proposal"}</h2></div><span className="pill">{finalStatus}</span></div>
+      {!proposal ? <>
+        <p className="governance-notice" role="status">{loading ? "Checking finalized Solana state" : statusMessage} · No vote transaction is available</p>
+        <div className="option-grid">{governanceActions.map(([title, detail], index) => <div key={title}><span>0{index + 1}</span><b>{title}</b><small>{detail}</small></div>)}</div>
+        <footer><span>Illustrative action catalog, not live voting options</span><span>Reward inventory is separate from the strategic reserve</span></footer>
+      </> : <>
+        <p className="governance-notice">{proposal.status === 5
+          ? "This passed decision was superseded by a holder re-vote after its execution window expired · Its frozen amount is not made free by the supersession"
+          : state!.custodyVerifiedForProposal
+          ? "The published proposal matches an MSTRx commitment in the program-controlled vault · Vote execution is not released, and issuer-level token powers remain outside this program"
+          : proposal.status === 4 && proposal.options[proposal.winningOption].action === "ACCUMULATE"
+            ? "The winning ACCUMULATE choice moved no tokens · Finalization released the proposal amount back to the free reserve"
+          : proposal.status === 4 && state!.lock
+            ? state!.lock.state === "RELEASED"
+              ? "The timed lock record is released and its proposal-specific MSTRx escrow is empty · Inspect the release transaction in the explorer"
+              : `The winning MSTRx lock is recorded in its proposal-specific escrow with ${formatMstrxExact(state!.lock.escrowBalanceRawMstrx)} MSTRx · ${state!.lock.state === "MATURED_AWAITING_RELEASE" ? "Its term has matured but release has not executed" : "Its term remains active"}`
+          : proposal.status === 4 && state!.executionReceipt
+            ? `The proposal-specific ${state!.executionReceipt.kind === "BUYBACK" ? "buyback" : "marketing sale"} receipt is verified at finalized commitment · ${formatMstrxExact(state!.executionReceipt.inputRawMstrx)} MSTRx input · ${state!.executionReceipt.action === "MARKETING_SALE" ? formatRawTokenExact(state!.executionReceipt.actualOutputRaw, 9) + " SOL" : formatRawTokenExact(state!.executionReceipt.actualOutputRaw, state!.capitalDecimals) + " CAPITAL"} output`
+            : "This historical proposal has no current reserve commitment · Its result does not prove that a reserve action was executed"}</p>
+        {proposal.status === 5 && state!.config.activeProposalId > proposal.id &&
+          <p className="governance-notice"><a href={`/governance?proposal=${state!.config.activeProposalId}`}>Current ballot →</a></p>}
+        <div className="proposal-summary">
+          <div><span>VOTING WINDOW</span><b>{new Date(proposal.startsAt * 1000).toLocaleString()} → {new Date(proposal.endsAt * 1000).toLocaleString()}</b></div>
+          <div><span>PUBLIC SNAPSHOT REVIEW</span><b>{new Date(state!.manifest.publishedAtUnix * 1000).toLocaleString()} → vote opens</b><small>Voting weight freezes at the published snapshot, not at voting start</small></div>
+          <div><span>FINALIZED SNAPSHOT</span><b>Slot {proposal.finalizedThroughSlot.toString()}</b><small>Blockhash {shortPublicKey(proposal.finalizedBlockhash)}</small></div>
+          <div><span>ONCHAIN RESERVE COMMITMENT</span><b>{state!.custodyVerifiedForProposal ? `${formatMstrxExact(state!.committedReserveRawMstrx)} MSTRx` : proposal.status === 5 ? "SUPERSEDED · SEE NEW RE-VOTE" : state!.lock ? `${formatMstrxExact(state!.lock.record.amount)} MSTRx ${state!.lock.state === "RELEASED" ? "RELEASED" : "LOCKED"}` : "NO CURRENT COMMITMENT"}</b><small>{state!.custodyVerifiedForProposal ? `${formatMstrxExact(state!.vaultBalanceRawMstrx)} MSTRx in vault · ${formatMstrxExact(state!.freeReserveRawMstrx)} free` : proposal.status === 5 ? "The earlier decision was replaced; inspect the later onchain proposal for the current lock" : state!.lock ? state!.lock.state === "RELEASED" ? "Proposal escrow empty · Check the release transfer in the explorer" : `Proposal escrow holds ${formatMstrxExact(state!.lock.escrowBalanceRawMstrx)} MSTRx` : "Historical amount is no longer reserved"}</small></div>
+          <div><span>QUORUM</span><b>{quorum.toLocaleString()} / {proposal.totalAvailableWeight.toLocaleString()} weight</b><small>7% of snapshot weight</small></div>
+          <div><span>CAST SO FAR</span><b>{proposal.totalCast.toLocaleString()} weight</b><small>Onchain tallies at finalized commitment</small></div>
+          <div><span>EXECUTION DELAY</span><b>{new Date(proposal.executableAt * 1000).toLocaleString()}</b><small>{proposal.status === 4 && proposal.options[proposal.winningOption].action === "ACCUMULATE" ? "ACCUMULATE executes as a no-op at finalization" : "A passed vote is not an executed action"}</small></div>
+        </div>
+        <div className="share-vote-row"><code>{proposalUrl}</code><button type="button" onClick={() => void navigator.clipboard.writeText(proposalUrl).catch(() => setActionError("Could not copy proposal link"))}>Copy link</button></div>
+        <div className="governance-evidence"><a href={solscanAccount(state!.proposalAddress.toBase58())} target="_blank" rel="noreferrer">Onchain proposal ↗</a><a href={solscanAccount(state!.config.reserveVault)} target="_blank" rel="noreferrer">MSTRx reserve vault ↗</a>{state!.lock && <><a href={solscanAccount(state!.lock.address.toBase58())} target="_blank" rel="noreferrer">Lock record ↗</a><a href={solscanAccount(state!.lock.escrowAddress.toBase58())} target="_blank" rel="noreferrer">Lock escrow ↗</a></>}{state!.executionReceipt && <a href={solscanAccount(state!.executionReceipt.address.toBase58())} target="_blank" rel="noreferrer">Verified execution receipt ↗</a>}<a href={solscanAccount(state!.programId.toBase58())} target="_blank" rel="noreferrer">Governance program ↗</a><a href={`/governance/proposals/${proposal.id}/manifest.json`} target="_blank" rel="noreferrer">Snapshot manifest ↗</a><a href={`/${state!.manifest.snapshot}`} target="_blank" rel="noreferrer">Holder snapshot ↗</a><a href={`/${state!.manifest.source}`} target="_blank" rel="noreferrer">Source records ↗</a></div>
+        <p className="governance-authority">The operator publishes the voting snapshot and source records · Anyone can recompute the weights and compare the SHA-256 files with the onchain root, but source completeness is not independently attested · Program upgrade authority: revoked · Reviewed program SHA-256: <code>{state!.programCodeSha256}</code></p>
+        <div className="option-grid">{proposal.options.map((option, index) => {
+          const [title, detail] = governanceActionCopy[option.action];
+          const percent = proposal.totalCast > 0n ? Number(proposal.optionWeights[index] * 10_000n / proposal.totalCast) / 100 : 0;
+          const minimum = option.minOutputRaw === 0n ? "" : option.action === "MARKETING_SALE"
+            ? ` · Minimum ${formatRawTokenExact(option.minOutputRaw, 9)} SOL`
+            : ` · Minimum ${formatRawTokenExact(option.minOutputRaw, state!.capitalDecimals)} CAPITAL`;
+          return <button type="button" key={option.action} disabled={!canVote} className={selectedOption === index ? "governance-option-selected" : [1, 4].includes(proposal.status) && proposal.winningOption === index ? "winning-option" : ""} onClick={() => setSelectedOption(index)}><span>0{index + 1}</span><b>{title}</b><small>{detail}{option.lockDurationSeconds ? ` · Lock ${option.lockDurationSeconds === 0xffffffff ? "permanently" : `${Math.round(option.lockDurationSeconds / 86_400)} days`}` : ""}{minimum}</small><strong>{proposal.optionWeights[index].toLocaleString()} weight · {percent.toFixed(2)}%</strong></button>;
+        })}</div>
+        <div className="governance-wallet-state">
+          {!publicKey ? <><p>Connect a Solana wallet to check its voting weight · Rewards never require wallet connection</p><WalletMultiButton className="governance-connect" /></>
+            : walletLoading ? <p>Checking your snapshot proof and vote record</p>
+              : voteRecord ? <p>Already voted for {governanceActionCopy[proposal.options[voteRecord.optionIndex].action][0]} with {voteRecord.weight.toLocaleString()} weight {voteSignature && <a href={solscanTransaction(voteSignature)} target="_blank" rel="noreferrer">Finalized vote transaction ↗</a>}</p>
+                : proof ? <p>Eligible weight: {BigInt(proof.weight).toLocaleString()} · Proof matches the onchain snapshot root <a href={`/governance/proposals/${proposal.id}/proofs/${publicKey.toBase58()}.json`} target="_blank" rel="noreferrer">View proof ↗</a></p>
+                  : <p>No verified voting weight for this wallet in the published snapshot</p>}
+          {voteRecord && voteRecordAddress && <a href={solscanAccount(voteRecordAddress)} target="_blank" rel="noreferrer">Vote-record account ↗</a>}
+          {submittedSignature && <a href={solscanTransaction(submittedSignature)} target="_blank" rel="noreferrer">Signed vote · check finality before retrying ↗</a>}
+          {actionError && <p className="governance-error" role="alert">{actionError}</p>}
+          <button className="governance-submit" type="button" disabled={!canVote || selectedOption === undefined} onClick={() => void submitVote()}>Vote with wallet</button>
+          <small>Voting signs a Solana transaction and requires network fees · The vote does not transfer CAPITAL or MSTRx from your wallet</small>
+        </div>
+        <footer><span>Votes are visible onchain · An executed lock is shown only when its record and escrow match the finalized proposal</span></footer>
+      </>}
+    </section><Footer links={links} /></main>;
 }
 
 const SolanaAdminPanel = lazy(() => import("./solanaAdmin").then((module) => ({ default: module.SolanaAdminPanel })));
 
 function Root() {
-  if (window.__FLYWHEEL_ADMIN__ === true) {
-    return <ConnectionProvider endpoint={solanaMainnet.rpcUrl}><WalletProvider wallets={[]} autoConnect><WalletModalProvider><Suspense fallback={<main style={{ padding: 32 }}>Загрузка панели…</main>}><SolanaAdminPanel /></Suspense></WalletModalProvider></WalletProvider></ConnectionProvider>;
-  }
-  if (window.location.pathname.startsWith("/docs")) return <DocumentationPage />;
-  if (window.location.pathname.startsWith("/governance")) return <GovernancePage />;
-  return <App />;
+  const admin = window.__FLYWHEEL_ADMIN__ === true;
+  const projectId = solanaWalletConnectProjectId(import.meta.env.VITE_SOLANA_WALLETCONNECT_PROJECT_ID);
+  const [wallets, setWallets] = useState<Adapter[]>([]);
+  useEffect(() => {
+    if (!projectId) return;
+    let mounted = true;
+    void createSolanaWalletConnectAdapter(projectId).then((adapter) => {
+      if (mounted) setWallets([adapter]);
+    }).catch(() => console.warn("Solana WalletConnect is unavailable; installed wallets remain available"));
+    return () => { mounted = false; };
+  }, [projectId]);
+  return <ConnectionProvider endpoint={solanaMainnet.rpcUrl}>
+    <WalletProvider wallets={wallets} autoConnect={admin}>
+      <WalletModalProvider>
+        {admin
+          ? <Suspense fallback={<main style={{ padding: 32 }}>Загрузка панели…</main>}><SolanaAdminPanel /></Suspense>
+          : window.location.pathname.startsWith("/docs") ? <DocumentationPage />
+            : window.location.pathname.startsWith("/governance") ? <GovernancePage />
+              : <App />}
+      </WalletModalProvider>
+    </WalletProvider>
+  </ConnectionProvider>;
 }
 
 createRoot(document.getElementById("root")!).render(<Root />);

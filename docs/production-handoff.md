@@ -4,7 +4,7 @@
 
 A working website, passing local tests or a read-only RPC check is **not** evidence of a live fee-to-holder payout cycle. Verify creator-fee collection, 60/40 routing, direct holder payouts and PumpSwap migration from finalized transactions before describing them as observed behavior
 
-Public voting remains disabled: the proposed Solana reserve-governance program is neither deployed nor audited. Do not market reserve decisions as active on-chain governance
+Public voting is not part of the owner-wallet launch route. The user-controlled reserve wallet cannot provide binding holder votes, so do not market reserve decisions as active on-chain governance
 
 The public social account is [@capital_mstr](https://x.com/capital_mstr). The project website is [flywheelstrategy.xyz](https://flywheelstrategy.xyz). Both links must agree with the deployed site
 
@@ -13,7 +13,7 @@ The public social account is [@capital_mstr](https://x.com/capital_mstr). The pr
 - One user-controlled Solana wallet may serve as owner, Pump creator and recovery destination; this is the approved simple control model
 - Automatic creator-fee collection requires a protected server-side copy of this wallet's keypair. A server compromise can therefore compromise owner authority even though the panel requires exact wallet signatures for user actions
 - Operator and holder-settlement signing keys are separate internal service roles, not additional user-facing administrators
-- The reserve wallet is separate and its private key is not required by the fee-collection service
+- The strategic-reserve destination is a separate user-controlled MSTRx wallet. The user keeps its key; the server verifies its token-account identity but cannot spend its balance
 - The holder-inventory signer is server-held. Its commitment rules are currently software/accounting controls, not an immutable on-chain vault; this trust boundary must remain explicit in public materials
 - Recovery is limited to identified, project-controlled **uncommitted** receipts. Completed holder transfers cannot be reversed. A published funded allocation must not be silently reclassified as owner funds
 
@@ -30,10 +30,10 @@ Public addresses may appear in audited configuration once final, but test identi
 | Holder history | Mint-wide finalized CAPITAL transfer coverage including a verified backfill route beyond realtime retention; no missing launch or migration movement |
 | Reward delivery | Fully funded epoch, direct payouts to wallets with and without an MSTRx ATA, bounded batches, restart recovery, no duplicate recipient and exact final conservation |
 | Operations | Independent RPCs, provider credentials, alerts, SOL funding, backups, service heartbeats and reproducible recovery runbook |
-| Public disclosure | Website, GitHub, X, final addresses and transaction links agree with deployed state; governance remains labeled inactive until separately released |
+| Public disclosure | Website, GitHub, X, final addresses and transaction links agree with deployed state; do not imply binding voting exists |
 | Security | Dependency review and independent review of custody, offchain accounting and any custom Solana program used with real value |
 
-Bitquery's realtime transfer window alone is not a historical archive. The indexer must stop on gaps until an independently verified backfill repairs them. No reward epoch should rely on guessed holder balances
+Holder accounting requires two independent archival RPCs to agree on every finalized produced block from the launch slot, including any catch-up after an outage. The indexer stops on a coverage gap or provider disagreement; optional Bitquery diagnostics cannot authorize a reward epoch. No reward epoch should rely on guessed holder balances
 
 The Pump creator-fee vault is scoped by creator and quote asset rather than by CAPITAL mint. The same creator must not operate another MSTRx-paired Pump coin unless the collection ledger is redesigned to attribute mixed receipts correctly
 

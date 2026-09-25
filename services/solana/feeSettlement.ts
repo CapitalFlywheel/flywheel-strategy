@@ -21,6 +21,8 @@ export interface FeeReceiptState {
   route?: SignedTransaction;
   holderRaw?: string;
   reserveRaw?: string;
+  reserveAuthority?: string;
+  reserveAta?: string;
   recoverySignature?: string;
 }
 
@@ -85,6 +87,23 @@ async function rebroadcast(environment: FeeSettlementEnvironment, prepared: Sign
   return broadcastPreparedTransaction({ connection: new Connection(environment.rpcUrls[0], "confirmed"), ...prepared });
 }
 
+export function classifyFeeTransactionProgress(
+  snapshots: readonly { status: { err: unknown } | null; height: number }[],
+  lastValidBlockHeight: number,
+) {
+  if (snapshots.length !== 2 || !Number.isSafeInteger(lastValidBlockHeight) || lastValidBlockHeight <= 0
+    || snapshots.some((row) => !Number.isSafeInteger(row.height) || row.height <= 0)) {
+    throw new Error("FEE_TRANSACTION_STATUS_INVALID");
+  }
+  if (snapshots.some((row) => row.status?.err)) throw new Error("FEE_TRANSACTION_ONCHAIN_FAILURE");
+  // Absence from both RPC histories is not a proof of nonexecution. The exact
+  // signed transaction must be resolved independently before any new signing.
+  if (snapshots.every((row) => row.status === null && row.height > lastValidBlockHeight + 32)) {
+    throw new Error("FEE_TRANSACTION_STATUS_UNRESOLVED");
+  }
+  return snapshots.every((row) => row.height <= lastValidBlockHeight) ? "rebroadcast" : "waiting";
+}
+
 async function pendingTransaction(environment: FeeSettlementEnvironment, prepared: SignedTransaction) {
   const snapshots = await Promise.all(environment.rpcUrls.map(async (url) => {
     const connection = new Connection(url, "finalized");
@@ -94,14 +113,25 @@ async function pendingTransaction(environment: FeeSettlementEnvironment, prepare
     ]);
     return { status: status.value[0], height };
   }));
-  if (snapshots.some((snapshot) => snapshot.status?.err)) throw new Error("FEE_TRANSACTION_ONCHAIN_FAILURE");
-  if (snapshots.every((snapshot) => snapshot.status === null && snapshot.height > prepared.lastValidBlockHeight + 32)) return "expired";
-  if (snapshots.every((snapshot) => snapshot.height <= prepared.lastValidBlockHeight)) {
+  if (classifyFeeTransactionProgress(snapshots, prepared.lastValidBlockHeight) === "rebroadcast") {
     try { await rebroadcast(environment, prepared); } catch {
       // The exact signed bytes remain in durable state and will be checked again
     }
   }
-  return "waiting";
+}
+
+async function verifiedReserveDestination(environment: FeeSettlementEnvironment) {
+  const reserve = new PublicKey(environment.reserve);
+  const mint = new PublicKey(environment.mint);
+  if (reserve.equals(new PublicKey(environment.holder)) || reserve.equals(new PublicKey(environment.creator))) {
+    throw new Error("RESERVE_WALLET_NOT_ISOLATED");
+  }
+  const ata = mstrxAta(reserve, mint);
+  await Promise.all(environment.rpcUrls.map(async (url) => {
+    const account = await getAccount(new Connection(url, "finalized"), ata, "finalized", TOKEN_2022_PROGRAM_ID);
+    if (!account.owner.equals(reserve) || !account.mint.equals(mint)) throw new Error("RESERVE_ATA_IDENTITY_MISMATCH");
+  }));
+  return { authority: reserve.toBase58(), ata: ata.toBase58() };
 }
 
 async function reconcileReceipt(environment: FeeSettlementEnvironment, state: FeeSettlementState, receipt: FeeReceiptState, allowRouting = true) {
@@ -111,10 +141,7 @@ async function reconcileReceipt(environment: FeeSettlementEnvironment, state: Fe
   if (receipt.state === "collecting") {
     const transaction = await readAgreedFinalizedTransaction(environment.rpcUrls, receipt.collection.signature, environment.mint);
     if (!transaction) {
-      if (await pendingTransaction(environment, receipt.collection) === "expired") {
-        receipt.state = "expired";
-        await save(environment, state);
-      }
+      await pendingTransaction(environment, receipt.collection);
       return false;
     }
     const amount = tokenAccountDelta(transaction, creatorAta);
@@ -127,6 +154,7 @@ async function reconcileReceipt(environment: FeeSettlementEnvironment, state: Fe
   }
   if (receipt.state === "collected") {
     if (!allowRouting) return false;
+    const verifiedReserve = await verifiedReserveDestination(environment);
     const amount = BigInt(receipt.collectedRaw ?? "0");
     if (amount <= 0n || amount > await balance(environment, environment.creator)) throw new Error("FEE_COLLECTED_BALANCE_UNAVAILABLE");
     const split = splitMstrx60_40(amount);
@@ -140,6 +168,8 @@ async function reconcileReceipt(environment: FeeSettlementEnvironment, state: Fe
     receipt.route = await prepareSignedTransaction({ connection, payer: operator, additionalSigners: [creator], instructions });
     receipt.holderRaw = split.holderRaw.toString();
     receipt.reserveRaw = split.reserveRaw.toString();
+    receipt.reserveAuthority = verifiedReserve.authority;
+    receipt.reserveAta = verifiedReserve.ata;
     receipt.state = "routing";
     await save(environment, state);
     await rebroadcast(environment, receipt.route);
@@ -147,13 +177,13 @@ async function reconcileReceipt(environment: FeeSettlementEnvironment, state: Fe
   }
   if (receipt.state === "routing") {
     if (!receipt.route || !receipt.collectedRaw || !receipt.holderRaw || !receipt.reserveRaw) throw new Error("FEE_ROUTE_STATE_INVALID");
+    if (receipt.reserveAuthority !== environment.reserve || receipt.reserveAta !== reserveAta) {
+      throw new Error("FEE_RESERVE_ROUTE_IDENTITY_MISMATCH");
+    }
     const transaction = await readAgreedFinalizedTransaction(environment.rpcUrls, receipt.route.signature, environment.mint);
     if (!transaction) {
-      if (await pendingTransaction(environment, receipt.route) === "expired") {
-        receipt.route = undefined;
-        receipt.state = "collected";
-        await save(environment, state);
-      }
+      await verifiedReserveDestination(environment);
+      await pendingTransaction(environment, receipt.route);
       return false;
     }
     if (tokenAccountDelta(transaction, creatorAta) !== -BigInt(receipt.collectedRaw)
@@ -169,6 +199,7 @@ async function reconcileReceipt(environment: FeeSettlementEnvironment, state: Fe
 
 export async function reconcilePendingFeeReceipt(environment: FeeSettlementEnvironment) {
   const state = await loadFeeSettlement(environment);
+  if (state.receipts.some((row) => row.state === "expired")) throw new Error("FEE_LEGACY_EXPIRED_UNRESOLVED");
   const pending = state.receipts.find((row) => row.state === "collecting" || row.state === "routing");
   if (!pending) return { pending: false };
   await reconcileReceipt(environment, state, pending, false);
@@ -177,12 +208,16 @@ export async function reconcilePendingFeeReceipt(environment: FeeSettlementEnvir
 
 export async function sweepCreatorFees(environment: FeeSettlementEnvironment, phase: Phase) {
   const state = await loadFeeSettlement(environment);
+  if (state.receipts.some((row) => row.state === "expired")) throw new Error("FEE_LEGACY_EXPIRED_UNRESOLVED");
   if (state.recovery?.state === "submitted") throw new Error("FEE_RECOVERY_PENDING");
   const pending = state.receipts.find((row) => row.state !== "routed" && row.state !== "recovered" && row.state !== "expired");
   if (pending) {
     const settled = await reconcileReceipt(environment, state, pending);
     return { changed: settled, receipt: pending };
   }
+  // Do not collect a new receipt until the user's separate MSTRx reserve ATA
+  // exists and both providers verify its ordinary-wallet owner and mint.
+  await verifiedReserveDestination(environment);
   const connection = new Connection(environment.rpcUrls[0], "confirmed");
   const balances = await Promise.all(environment.rpcUrls.map(async (rpcUrl) => {
     const row = await readCustomQuoteCreatorFeeBalances({
@@ -216,6 +251,7 @@ export async function sweepCreatorFees(environment: FeeSettlementEnvironment, ph
 }
 
 export function recoverableFeeAmount(state: FeeSettlementState) {
+  if (state.receipts.some((row) => row.state === "expired")) throw new Error("FEE_LEGACY_EXPIRED_UNRESOLVED");
   if (state.receipts.some((row) => row.state === "collecting" || row.state === "routing")) throw new Error("FEE_TRANSACTION_UNRESOLVED");
   return state.receipts.filter((row) => row.state === "collected")
     .reduce((sum, row) => sum + BigInt(row.collectedRaw ?? "0"), 0n);
@@ -237,12 +273,7 @@ export async function recoverUncommittedCreatorFees(environment: FeeSettlementEn
   if (state.recovery?.state === "submitted") {
     const transaction = await readAgreedFinalizedTransaction(environment.rpcUrls, state.recovery.transaction.signature, environment.mint);
     if (!transaction) {
-      if (await pendingTransaction(environment, state.recovery.transaction) === "expired") {
-        const amount = state.recovery.amount;
-        state.recovery = undefined;
-        await save(environment, state);
-        return { pending: false, amount, expired: true };
-      }
+      await pendingTransaction(environment, state.recovery.transaction);
       return { pending: true, amount: state.recovery.amount };
     }
     if (tokenAccountDelta(transaction, creatorAta) !== -BigInt(state.recovery.amount)

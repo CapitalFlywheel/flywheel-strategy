@@ -1,4 +1,8 @@
-import { OnlinePumpSdk, PUMP_AMM_PROGRAM_ID, PUMP_PROGRAM_ID } from "@pump-fun/pump-sdk";
+import {
+  ammCreatorVaultPda, creatorVaultPda, OnlinePumpSdk, PUMP_AMM_PROGRAM_ID,
+  PUMP_PROGRAM_ID, quoteAta,
+} from "@pump-fun/pump-sdk";
+import { TOKEN_2022_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { Connection, PublicKey, type TransactionInstruction } from "@solana/web3.js";
 
 export async function buildCustomQuoteCreatorFeeSweep(args: {
@@ -41,19 +45,38 @@ export async function readCustomQuoteCreatorFeeBalances(args: {
   quoteMint: string;
   quoteTokenProgram: string;
 }) {
+  // The SDK's getCreatorVaultQuoteBalances enumerates only quote mints that
+  // are *currently* listed in Global/QuoteControl. A delisted quote can still
+  // accrue fees for an existing coin, so always inspect this fixed quote's
+  // canonical vault ATAs directly.
   const connection = new Connection(args.rpcUrl, "finalized");
-  const sdk = new OnlinePumpSdk(connection);
+  const creator = new PublicKey(args.creator);
   const quoteMint = new PublicKey(args.quoteMint);
   const quoteTokenProgram = new PublicKey(args.quoteTokenProgram);
-  const balances = await sdk.getCreatorVaultQuoteBalances(new PublicKey(args.creator));
-  const matching = balances.filter((balance) => (
-    balance.mint.equals(quoteMint) && balance.quoteTokenProgram.equals(quoteTokenProgram)
-  ));
-  if (matching.length !== 1) throw new Error("PUMP_MSTRX_QUOTE_BALANCE_UNAVAILABLE");
+  if (!quoteTokenProgram.equals(TOKEN_2022_PROGRAM_ID)) throw new Error("PUMP_QUOTE_TOKEN_PROGRAM_INVALID");
+  const curveAuthority = creatorVaultPda(creator);
+  const pumpSwapAuthority = ammCreatorVaultPda(creator);
+  const curveAta = quoteAta(curveAuthority, quoteMint, quoteTokenProgram);
+  const pumpSwapAta = quoteAta(pumpSwapAuthority, quoteMint, quoteTokenProgram);
+  const [curveAccount, pumpSwapAccount] = await connection.getMultipleAccountsInfo(
+    [curveAta, pumpSwapAta], "finalized",
+  );
+  const readAmount = (account: typeof curveAccount, ata: PublicKey, authority: PublicKey) => {
+    if (!account) return 0n;
+    let decoded;
+    try { decoded = unpackAccount(ata, account, quoteTokenProgram); }
+    catch { throw new Error("PUMP_MSTRX_FEE_VAULT_INVALID"); }
+    if (!decoded.mint.equals(quoteMint) || !decoded.owner.equals(authority)
+      || !decoded.isInitialized || decoded.isFrozen || decoded.delegate !== null
+      || decoded.closeAuthority !== null) throw new Error("PUMP_MSTRX_FEE_VAULT_INVALID");
+    return decoded.amount;
+  };
+  const curveRaw = readAmount(curveAccount, curveAta, curveAuthority);
+  const pumpSwapRaw = readAmount(pumpSwapAccount, pumpSwapAta, pumpSwapAuthority);
   return {
-    curveRaw: BigInt(matching[0].pumpVault.toString()),
-    pumpSwapRaw: BigInt(matching[0].ammVault.toString()),
-    totalRaw: BigInt(matching[0].total.toString()),
+    curveRaw,
+    pumpSwapRaw,
+    totalRaw: curveRaw + pumpSwapRaw,
   };
 }
 

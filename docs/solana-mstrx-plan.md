@@ -92,12 +92,12 @@ Before production the history source must prove finalized CAPITAL transfers with
 - The dev creator wallet owns the fee destination and remains under project control
 - The operator wallet pays SOL transaction fees only
 - The holder inventory wallet contains MSTRx for holder distribution and has a separate server-held signing key; the commitment is enforced by service logic and accounting, not an immutable on-chain vault
-- The reserve wallet contains only the strategic 40% allocation
+- The strategic 40% goes to a separate user-controlled reserve wallet. Its owner has direct access; this is not a binding holder-governed vault
 - Marketing funds remain separate
 - The private panel can pause routing and recover only uncommitted MSTRx still present in project-controlled staging accounts to the configured recovery wallet, which may be the owner wallet
 - Completed holder transfers are never reclaimed
 
-The approved single-wallet configuration uses one user-controlled address for owner, Pump creator and recovery. Its keypair is installed outside Git in a protected file because automatic fee routing requires its Token-2022 signature. This exposes owner authority if the server is compromised, even though panel actions still require signed challenges. Operator and holder-settlement service keys remain separate, and no reserve private key is installed on the server
+The approved single-wallet configuration uses one user-controlled address for owner, Pump creator and recovery. Its keypair is installed outside Git in a protected file because automatic fee routing requires its Token-2022 signature. This exposes owner authority if the server is compromised, even though panel actions still require signed challenges. Operator and holder-settlement service keys remain separate. The reserve wallet key stays with the user and is not installed on the server
 
 Pump creator-fee vaults are scoped to creator and quote asset, not CAPITAL mint. This wallet must not launch another MSTRx-paired Pump token or carry earlier uncollected MSTRx creator fees; otherwise the current receipt accounting cannot attribute the mixed vault balance to CAPITAL
 
@@ -141,11 +141,11 @@ Wallet connection remains unnecessary for receiving rewards
 
 ## Remaining production blockers
 
-- final production Solana owner/creator/recovery address, distinct operator, holder-inventory and reserve public keys, and optional marketing public key; disposable staging addresses must not be reused
-- protected server paths for the shared owner/creator keypair and separate operator and holder keypairs; reserve private key stays off-server
+- final production Solana owner/creator/recovery address, distinct operator and holder-inventory public keys and a user-controlled reserve address; disposable test addresses must not be reused
+- protected server paths for the shared owner/creator keypair and separate operator and holder keypairs; no reserve key is needed on the server
 - publication checks for the new X account at [@capital_mstr](https://x.com/capital_mstr) and the production website
 - production primary and independent fallback Solana RPC providers
-- production Bitquery or equivalent mint-wide transfer-history coverage, tested against CAPITAL transfers and with a verified backfill route for outages beyond realtime retention
+- two independent archival RPC sources for complete finalized-block coverage of CAPITAL balance changes, tested for v1 transactions, provider outages, restarts and long gaps; Bitquery is diagnostic only
 - final CAPITAL mint created through the verified Pump.fun MSTRx custom-pair flow
 - end-to-end rehearsal proving transfer-hook routing and airdrop delivery
 - independent review of custody, automation and any governance program used at launch

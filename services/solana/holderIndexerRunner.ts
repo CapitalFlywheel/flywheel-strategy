@@ -1,17 +1,19 @@
 import "dotenv/config";
+import { assertSolanaRunnerSingleton } from "./runnerSingleton";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Connection } from "@solana/web3.js";
-import { bitqueryAuthFromEnv } from "./bitqueryAuth";
-import { BitqueryTransferSource } from "./bitqueryTransferSource";
-import { refreshHolderJournal } from "./holderJournal";
+import { acknowledgeFinalizedBlockBackfill, discoverFinalizedBlockTransfers,
+  pendingFinalizedBlockBackfillTarget } from "./finalizedBlockBackfill";
+import { refreshHolderJournal, type MintTransferSource } from "./holderJournal";
 import { finalizedConsensus, requireMatchingValues } from "./rpcConsensus";
+import { MAX_SUPPORTED_SOLANA_TRANSACTION_VERSION } from "./rpcTransactionVersion";
 
-let transferSource: BitqueryTransferSource | undefined;
-
-function mintTransferSource() {
-  return transferSource ??= new BitqueryTransferSource(bitqueryAuthFromEnv());
-}
+const finalizedBlockSource: MintTransferSource = {
+  discover: async () => { throw new Error("HOLDER_BITQUERY_DISCOVERY_DISABLED"); },
+  discoverFinalizedBlocks: discoverFinalizedBlockTransfers,
+  acknowledgeFinalizedBlocks: acknowledgeFinalizedBlockBackfill,
+};
 
 function required(name: string) {
   const value = process.env[name]?.trim();
@@ -22,7 +24,8 @@ function required(name: string) {
 async function agreedBlock(rpcUrls: readonly [string, string], proposedSlot: number) {
   for (let slot = proposedSlot; slot > proposedSlot - 64; slot -= 1) {
     const blocks = await Promise.all(rpcUrls.map(async (url) => new Connection(url, "finalized").getBlock(slot, {
-      commitment: "finalized", transactionDetails: "none", rewards: false, maxSupportedTransactionVersion: 0,
+      commitment: "finalized", transactionDetails: "none", rewards: false,
+      maxSupportedTransactionVersion: MAX_SUPPORTED_SOLANA_TRANSACTION_VERSION,
     })));
     if (blocks.every((block) => block === null)) continue;
     if (blocks.some((block) => !block || block.blockTime === null)) throw new Error("HOLDER_FINALIZED_BLOCK_RPC_DISAGREEMENT");
@@ -52,7 +55,14 @@ export async function indexHoldersOnce() {
   const consensus = await finalizedConsensus(rpcUrls);
   const lagSlots = Number(process.env.SOLANA_HOLDER_INDEX_LAG_SLOTS || "1500");
   if (!Number.isInteger(lagSlots) || lagSlots < 64 || lagSlots > 20_000) throw new Error("HOLDER_INDEX_LAG_INVALID");
-  const target = await agreedBlock(rpcUrls, consensus.slot - lagSlots);
+  const stateRoot = resolve(process.env.SOLANA_STATE_ROOT || "data/solana");
+  const pendingBackfill = await pendingFinalizedBlockBackfillTarget(stateRoot, config.projectMint, config.launchedAtSlot!);
+  if (pendingBackfill && pendingBackfill.slot > consensus.slot - lagSlots) throw new Error("HOLDER_BACKFILL_TARGET_NOT_FINALIZED");
+  const target = await agreedBlock(rpcUrls, pendingBackfill?.slot ?? consensus.slot - lagSlots);
+  if (pendingBackfill && (target.slot !== pendingBackfill.slot || target.blockhash !== pendingBackfill.blockhash
+    || target.blockTime !== pendingBackfill.blockTime)) {
+    throw new Error("HOLDER_BACKFILL_TARGET_RPC_DISAGREEMENT");
+  }
   if (target.slot < config.launchedAtSlot!) {
     await heartbeat(true, `waiting-for-finalized-index-lag:${target.slot}/${config.launchedAtSlot}`);
     return false;
@@ -61,18 +71,31 @@ export async function indexHoldersOnce() {
   if (launch.slot !== config.launchedAtSlot) throw new Error("HOLDER_LAUNCH_SLOT_MISSING");
   const epochSeconds = Number(process.env.SOLANA_REWARD_EPOCH_SECONDS || "3600");
   if (!Number.isInteger(epochSeconds) || epochSeconds < 300) throw new Error("HOLDER_EPOCH_CADENCE_INVALID");
+  const backfillSlotsPerRun = Number(process.env.SOLANA_HOLDER_BACKFILL_SLOTS_PER_RUN || "2048");
+  if (!Number.isSafeInteger(backfillSlotsPerRun) || backfillSlotsPerRun < 1 || backfillSlotsPerRun > 2048) {
+    throw new Error("HOLDER_BACKFILL_BUDGET_INVALID");
+  }
+  const backfillBlockConcurrency = Number(process.env.SOLANA_HOLDER_BACKFILL_BLOCK_CONCURRENCY || "4");
+  if (!Number.isSafeInteger(backfillBlockConcurrency) || backfillBlockConcurrency < 1 || backfillBlockConcurrency > 8) {
+    throw new Error("HOLDER_BACKFILL_CONCURRENCY_INVALID");
+  }
   const result = await refreshHolderJournal({
     environment: {
       rpcUrls,
-      stateRoot: resolve(process.env.SOLANA_STATE_ROOT || "data/solana"),
+      stateRoot,
       journalPath: resolve(required("SOLANA_HOLDER_JOURNAL_PATH")),
       mint: config.projectMint,
       launchSlot: config.launchedAtSlot!,
       launchSignature: config.launchedAtSignature,
       launchTime: launch.blockTime,
       epochSeconds,
+      backfillSlotsPerRun,
+      backfillBlockConcurrency,
+      // Bitquery Transfers does not attest exhaustive mint/burn discovery.
+      // Every eligible holder cursor therefore requires full-block coverage.
+      forceFinalizedBackfill: true,
     },
-    source: mintTransferSource(),
+    source: finalizedBlockSource,
     finalizedThroughSlot: target.slot,
     finalizedThroughTime: target.blockTime,
     finalizedBlockhash: target.blockhash,
@@ -82,15 +105,21 @@ export async function indexHoldersOnce() {
 }
 
 async function main() {
+  assertSolanaRunnerSingleton("holder-indexer");
+  const intervalMs = Number(process.env.SOLANA_HOLDER_INDEX_INTERVAL_MS || "15000");
+  if (!Number.isSafeInteger(intervalMs) || intervalMs < 1_000 || intervalMs > 300_000) {
+    throw new Error("HOLDER_INDEX_INTERVAL_INVALID");
+  }
   while (true) {
     try {
       await indexHoldersOnce();
-    } catch {
+    } catch (error) {
       // Public heartbeat files must not include RPC/client exception text,
       // which can contain authenticated endpoint URLs or API tokens.
-      await heartbeat(false, "HOLDER_INDEXER_FAILED");
+      await heartbeat(false, error instanceof Error && error.message === "HOLDER_INDEX_BACKFILL_IN_PROGRESS"
+        ? "HOLDER_INDEX_BACKFILL_IN_PROGRESS" : "HOLDER_INDEXER_FAILED");
     }
-    await new Promise((delay) => setTimeout(delay, Number(process.env.SOLANA_HOLDER_INDEX_INTERVAL_MS || "300000")));
+    await new Promise((delay) => setTimeout(delay, intervalMs));
   }
 }
 

@@ -44,7 +44,7 @@ MSTRx uses Token-2022 transfer-hook extensions. Every routed or distributed tran
 
 The exact hold-time model uses finalized CAPITAL balance changes and deterministic newest-lot-first reductions on a partial sale
 
-`services/solana/holderIndexerRunner.ts` discovers mint-wide transfer signatures from the configured transfer source. It verifies each new transaction against two independent finalized RPC providers, stores launch-seeded movements with slot and block identity, re-reads a one-hour overlap and stops if any previously indexed transfer disappears. Reorged or merely confirmed state is not eligible. Its Bitquery realtime adapter is intentionally fail-closed after a six-hour history gap and needs an independently verified historical repair before payouts resume
+`services/solana/holderIndexerRunner.ts` discovers mint-wide CAPITAL candidates by scanning every finalized produced block with two independent RPC providers, from launch and then across every new slot range. It verifies each candidate's ordered token movements and canonical transaction position against both providers, persists a versioned launch-to-target coverage marker and digest, and requires a one-slot overlap on extension. Reorged or merely confirmed state is not eligible. An incomplete bounded scan cannot advance the holder cursor or payout journal. The scan requires archival full-block coverage and may halt on provider limits; Bitquery-only transfer rows do not prove completeness and cannot authorize holder rewards. See `docs/solana-holder-backfill.md`
 
 Every epoch records
 
@@ -62,13 +62,15 @@ The distributor creates recipient Token-2022 associated token accounts when requ
 
 Every batch is idempotent. Restarts load processed batch identifiers and confirmed signatures before building another transaction
 
+The local version-4 reward plan binds one deterministic, separate Token-2022 owed-escrow account per epoch, owned by the existing holder-settlement authority. A proven failed packet is retried recipient by recipient. An allocation becomes owed only when its exact MSTRx amount is finalized in that escrow, never when a transfer merely fails or becomes invisible to an RPC. Private per-epoch debt receipts, public sanitized status and bounded escrow-only retries preserve `paid + escrowed = funded`; old escrow balances never fund new epochs. This recovery path still requires real MSTRx extension, transfer-hook and restart tests before release. It is not a deployed onchain commitment and a compromised holder-settlement signer could bypass the software restriction
+
 The owner may pause future routing and recover only collected but uncommitted MSTRx recorded in the creator receipt ledger. Committed holder inventory, completed holder transfers and reserve inventory are not part of that recovery route
 
 ## Strategic reserve
 
-Reserve inventory is held separately from the reward vault. Governance is a new Solana execution layer and does not reuse Solidity contracts
+Reserve inventory is held in a separate ordinary MSTRx token account owned by the user-controlled reserve wallet. The runner verifies that token account's mint and owner before routing its 40% share. No Solana reserve or governance program is deployed or required for launch
 
-The Solana reserve-governance program has not been deployed or audited. Public voting and governance execution remain disabled. The intended program must support only reviewed fixed action variants; arbitrary instructions, arbitrary recipients and browser-supplied transaction data are not accepted by the current control plane
+The wallet owner can transfer reserve funds directly. This is not binding holder governance. The historical onchain governance prototype in this repository is not part of the active Solana product and its voting and execution routes remain disabled
 
 ## Control plane
 

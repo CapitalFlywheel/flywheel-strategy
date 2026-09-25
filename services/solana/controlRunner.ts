@@ -4,27 +4,67 @@ import { resolve, sep } from "node:path";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { bondingCurvePda, bondingCurveV2Pda, canonicalPumpPoolPda, canonicalPumpPoolPdaWithQuote, pumpPoolAuthorityPda } from "@pump-fun/pump-sdk";
 import { ExtensionType, getAccount, getExtensionTypes, getMint, getScaledUiAmountConfig, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
-import { verifyFixedMstrxPumpLaunch } from "./launchVerifier";
-import { detectAgreedCreatorPumpLaunch } from "./launchDetector";
+import { assertFixedMstrxPumpLaunch, verifyFixedMstrxPumpLaunch } from "./launchVerifier";
+import { armDurableCreatorPumpLaunchScan, detectDurableAgreedCreatorPumpLaunch, resumeDurableCreatorPumpLaunchScan, type PumpCreateCandidate } from "./launchDetector";
 import { createMstrxAtaInstruction, mstrxAta } from "./mstrxTransfers";
 import { finalizedConsensus, requireMatchingValues } from "./rpcConsensus";
-import { distributeRewardEpoch, finalizeRewardEpoch, loadCurrentRewardPlan, prepareRewardEpoch, type RewardPipelineEnvironment } from "./rewardPipeline";
+import { distributeRewardEpoch, finalizeRewardEpoch, loadCurrentRewardPlan, prepareRewardEpoch, retryOwedRewardPayments, type RewardPipelineEnvironment } from "./rewardPipeline";
 import { loadKeypair, simulateAndSend } from "./transactions";
 import { reconcilePendingFeeReceipt, recoverUncommittedCreatorFees, sweepCreatorFees, type FeeSettlementEnvironment } from "./feeSettlement";
 import { writeDurableJson } from "./durableJson";
 import { assertSolanaWalletRoles, sharedAdminCreatorEnabled } from "./walletRoles";
 import { readCustomQuoteCreatorFeeBalances } from "./pumpFees";
-import { verifySignedSolanaControlAction, type SignedSolanaControlAction } from "./controlAuth";
+import { SOLANA_GOVERNANCE_FINALIZE_RELEASED, SOLANA_GOVERNANCE_PROPOSAL_CONTROL_RELEASED,
+  SOLANA_GOVERNANCE_RESERVE_WITHDRAWAL_RELEASED,
+  verifySignedSolanaControlAction, type SignedSolanaControlAction } from "./controlAuth";
 import { writeControlRequestOutcome } from "./controlRequestStatus";
-import { probeBitqueryLaunchReadiness } from "./bitqueryReadiness";
+import { verifyGovernanceProposalStatus, type GovernanceProposalStatus } from "./governanceProposalStatus";
+import { reconcileFreeWithdrawal, withdrawFreeReserve, type FreeWithdrawalEnvironment, type FreeWithdrawalLedger } from "./governanceFreeWithdrawal";
+import { finalizeVote, reconcileFinalizeVote, type FinalizeVoteEnvironment, type FinalizeVoteLedger } from "./governanceFinalize";
+import { createProposalControl, reconcileProposalControl, type ProposalControlEnvironment,
+  type ProposalControlLedger } from "./governanceProposalControl";
+import { publishOwnerGovernanceSnapshot } from "./governanceSnapshotControl";
+import { executeLockDecision, reconcileLockExecution, type LockExecutionLedger } from "./governanceLockExecutionControl";
+import { executeBuybackDecision, reconcileBuybackExecution, type BuybackExecutionLedger } from "./governanceBuybackExecutionControl";
+import { executeMarketingDecision, reconcileMarketingExecution, type MarketingExecutionLedger } from "./governanceMarketingExecutionControl";
+import { releaseMatureMstrxLock, reconcileLockRelease, type LockReleaseLedger,
+  type SignedLockRelease } from "./governanceLockReleaseControl";
+import { assertSolanaRunnerSingleton } from "./runnerSingleton";
+import { requireGovernanceExecutionReleased, SOLANA_GOVERNANCE_EXECUTION_RELEASED } from "./releaseGates";
+import { verifyGovernanceReserveRoute } from "./governanceVaultRoute";
 
 interface ControlRequest extends SignedSolanaControlAction { id: string; requestedAt: number }
 interface ControlStatus {
   network: "solana-mainnet-beta";
   automationState: "running" | "stopped" | "unknown";
-  launch: { configured: boolean; armed: boolean; armedAt?: number; detectedMint?: string; detectedSignature?: string; activated: boolean };
+  launch: { configured: boolean; executionReleased?: boolean; armed: boolean; armedAt?: number; detectedMint?: string; detectedSignature?: string; governanceBindState?: "pending" | "bound"; activated: boolean };
   services: Record<string, { ok: boolean; updatedAt: number; detail?: string }>;
   balances: { creatorMstrxRaw?: string; holderMstrxRaw?: string; reserveMstrxRaw?: string };
+  governance?: {
+    program: string;
+    programCodeSha256: string;
+    reserveMint: string;
+    capitalTokenProgram: string;
+    withdrawalReleased: boolean;
+    vaultTokenAccount: string;
+    boundCapitalMint: string | null;
+    vaultBalanceRaw: string;
+    committedRaw: string;
+    freeRaw: string;
+    lastProposalId: string;
+    activeProposalId: string;
+    updatedAt: number;
+  };
+  governanceWithdrawal?: { requestId: string; amountRaw: string; signature: string; state: string; updatedAt: number };
+  governanceFinalization?: { requestId: string; proposalId: string; signature: string; state: string; updatedAt: number };
+  governanceCreation?: { requestId: string; proposalId: string; mode: string; signature: string; state: string; updatedAt: number };
+  governanceLockExecution?: { requestId: string; proposalId: string; signature: string; state: string; updatedAt: number };
+  governanceBuybackExecution?: { requestId: string; proposalId: string; signature: string; state: string; updatedAt: number };
+  governanceMarketingExecution?: { requestId: string; proposalId: string; signature: string; state: string; updatedAt: number };
+  governanceLockRelease?: { requestId: string; proposalId: string; signature: string; state: string; updatedAt: number };
+  governanceSnapshot?: { proposalId: string; merkleRoot: string; totalAvailableWeight: string;
+    sourceSha256: string; snapshotSha256: string; publishedAtUnix: number; reused: boolean; updatedAt: number };
+  governanceProposal?: GovernanceProposalStatus;
   conversionsPaused: boolean;
   rewardEpochOwnsPause?: boolean;
   updatedAt: number;
@@ -47,6 +87,105 @@ function required(name: string) {
 
 function rpcUrls() { return [required("SOLANA_RPC_PRIMARY_URL"), required("SOLANA_RPC_FALLBACK_URL")]; }
 function mstrxMint() { return new PublicKey(required("SOLANA_MSTRX_MINT")); }
+
+// Legacy governance reconciliation remains dormant; it is not part of the
+// owner-wallet launch and fee route.
+function governanceStatus(route: Awaited<ReturnType<typeof verifyGovernanceReserveRoute>>): NonNullable<ControlStatus["governance"]> {
+  return {
+    program: route.program,
+    programCodeSha256: route.programCodeSha256,
+    reserveMint: mstrxMint().toBase58(),
+    capitalTokenProgram: route.capitalTokenProgram,
+    withdrawalReleased: SOLANA_GOVERNANCE_RESERVE_WITHDRAWAL_RELEASED,
+    vaultTokenAccount: route.ata,
+    boundCapitalMint: route.boundMint,
+    vaultBalanceRaw: route.vaultBalanceRaw.toString(),
+    committedRaw: route.committedRaw.toString(),
+    freeRaw: route.freeRaw.toString(),
+    lastProposalId: route.lastProposalId.toString(),
+    activeProposalId: route.activeProposalId.toString(),
+    updatedAt: Date.now(),
+  };
+}
+
+function freeWithdrawalEnvironment(status: ControlStatus): FreeWithdrawalEnvironment {
+  if (!status.launch.activated || status.launch.governanceBindState !== "bound" || !status.launch.detectedMint) {
+    throw new Error("GOVERNANCE_NOT_BOUND");
+  }
+  return {
+    rpcUrls: rpcUrls() as [string, string],
+    stateRoot: resolve(process.env.SOLANA_STATE_ROOT || "data/solana"),
+    governanceProgram: required("SOLANA_GOVERNANCE_PROGRAM"),
+    expectedProgramCodeSha256: required("SOLANA_GOVERNANCE_PROGRAM_CODE_SHA256"),
+    reserveAuthority: required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"),
+    reserveMint: required("SOLANA_MSTRX_MINT"),
+    capitalMint: status.launch.detectedMint,
+    admin: required("SOLANA_ADMIN_OWNER"),
+    adminKeypairPath: process.env.SOLANA_ADMIN_KEYPAIR_PATH?.trim() || required("SOLANA_CREATOR_KEYPAIR_PATH"),
+  };
+}
+
+function finalizeVoteEnvironment(status: ControlStatus): FinalizeVoteEnvironment {
+  const withdrawal = freeWithdrawalEnvironment(status);
+  return {
+    rpcUrls: withdrawal.rpcUrls,
+    stateRoot: withdrawal.stateRoot,
+    governanceProgram: withdrawal.governanceProgram,
+    expectedProgramCodeSha256: withdrawal.expectedProgramCodeSha256,
+    reserveAuthority: withdrawal.reserveAuthority,
+    reserveMint: withdrawal.reserveMint,
+    capitalMint: withdrawal.capitalMint,
+    admin: withdrawal.admin,
+    adminKeypairPath: withdrawal.adminKeypairPath,
+  };
+}
+
+function finalizationProgress(ledger: FinalizeVoteLedger): NonNullable<ControlStatus["governanceFinalization"]> {
+  return { requestId: ledger.requestId, proposalId: ledger.intent.proposalId,
+    signature: ledger.transaction.signature, state: ledger.state, updatedAt: ledger.updatedAt };
+}
+
+function proposalControlEnvironment(status: ControlStatus): ProposalControlEnvironment {
+  const base = finalizeVoteEnvironment(status);
+  return { rpcUrls: base.rpcUrls, stateRoot: base.stateRoot,
+    publicDataRoot: resolve(process.env.PUBLIC_DATA_ROOT || "data/public"),
+    governanceProgram: base.governanceProgram,
+    expectedProgramCodeSha256: base.expectedProgramCodeSha256,
+    reserveMint: base.reserveMint, capitalMint: base.capitalMint,
+    admin: base.admin, adminKeypairPath: base.adminKeypairPath };
+}
+
+function proposalCreationProgress(ledger: ProposalControlLedger): NonNullable<ControlStatus["governanceCreation"]> {
+  return { requestId: ledger.requestId,
+    proposalId: ledger.authorization.proposalCreation!.proposalId,
+    mode: ledger.authorization.proposalCreation!.request.mode,
+    signature: ledger.transaction.signature, state: ledger.state, updatedAt: ledger.updatedAt };
+}
+
+function lockExecutionProgress(ledger: LockExecutionLedger): NonNullable<ControlStatus["governanceLockExecution"]> {
+  return { requestId: ledger.requestId, proposalId: ledger.authorization.lockExecution!.proposalId,
+    signature: ledger.transaction.signature, state: ledger.state, updatedAt: ledger.updatedAt };
+}
+
+function buybackExecutionProgress(ledger: BuybackExecutionLedger): NonNullable<ControlStatus["governanceBuybackExecution"]> {
+  return { requestId: ledger.requestId, proposalId: ledger.authorization.buybackExecution!.proposalId,
+    signature: ledger.transaction.signature, state: ledger.state, updatedAt: ledger.updatedAt };
+}
+
+function marketingExecutionProgress(ledger: MarketingExecutionLedger): NonNullable<ControlStatus["governanceMarketingExecution"]> {
+  return { requestId: ledger.requestId, proposalId: ledger.authorization.marketingExecution!.proposalId,
+    signature: ledger.transaction.signature, state: ledger.state, updatedAt: ledger.updatedAt };
+}
+
+function lockReleaseProgress(ledger: LockReleaseLedger): NonNullable<ControlStatus["governanceLockRelease"]> {
+  return { requestId: ledger.requestId, proposalId: ledger.authorization.lockRelease.proposalId,
+    signature: ledger.transaction.signature, state: ledger.state, updatedAt: ledger.updatedAt };
+}
+
+function withdrawalProgress(ledger: FreeWithdrawalLedger): NonNullable<ControlStatus["governanceWithdrawal"]> {
+  return { requestId: ledger.requestId, amountRaw: ledger.intent.amountRaw,
+    signature: ledger.transaction.signature, state: ledger.state, updatedAt: ledger.updatedAt };
+}
 
 function feeEnvironment(status: ControlStatus): FeeSettlementEnvironment {
   return {
@@ -118,10 +257,12 @@ async function saveStatus(status: ControlStatus) {
     automationState: status.automationState,
     launch: {
       configured: status.launch.configured,
+      executionReleased: true,
       armed: status.launch.armed,
       armedAt: status.launch.armedAt,
       detectedMint: status.launch.detectedMint,
       detectedSignature: status.launch.detectedSignature,
+      governanceBindState: status.launch.governanceBindState,
       activated: status.launch.activated,
     },
     services,
@@ -130,6 +271,19 @@ async function saveStatus(status: ControlStatus) {
       holderMstrxRaw: status.balances.holderMstrxRaw,
       reserveMstrxRaw: status.balances.reserveMstrxRaw,
     },
+    reserveWallet: process.env.SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY?.trim(),
+    governance: status.governance,
+    governanceFinalizeReleased: SOLANA_GOVERNANCE_FINALIZE_RELEASED,
+    governanceProposalControlReleased: SOLANA_GOVERNANCE_PROPOSAL_CONTROL_RELEASED,
+    governanceWithdrawal: status.governanceWithdrawal,
+    governanceFinalization: status.governanceFinalization,
+    governanceCreation: status.governanceCreation,
+    governanceLockExecution: status.governanceLockExecution,
+    governanceBuybackExecution: status.governanceBuybackExecution,
+    governanceMarketingExecution: status.governanceMarketingExecution,
+    governanceLockRelease: status.governanceLockRelease,
+    governanceSnapshot: status.governanceSnapshot,
+    governanceProposal: status.governanceProposal,
     conversionsPaused: status.conversionsPaused,
     rewardEpochOwnsPause: status.rewardEpochOwnsPause,
     updatedAt: status.updatedAt,
@@ -155,7 +309,7 @@ async function publishRuntimeConfig(status: ControlStatus, launchedAtSlot: numbe
     creatorFeeRecipient: required("SOLANA_CREATOR_PUBLIC_KEY"),
     rewardVaultTokenAccount: mstrxAta(holder, mint).toBase58(),
     reserveVaultTokenAccount: mstrxAta(reserve, mint).toBase58(),
-    ...(process.env.SOLANA_GOVERNANCE_PROGRAM?.trim() ? { governanceProgram: process.env.SOLANA_GOVERNANCE_PROGRAM.trim() } : {}),
+    reserveWallet: reserve.toBase58(),
     ...(process.env.SOLANA_MARKETING_PUBLIC_KEY?.trim() ? { marketingWallet: process.env.SOLANA_MARKETING_PUBLIC_KEY.trim() } : {}),
     launchedAtSlot,
   };
@@ -191,6 +345,8 @@ async function publishPublicBalances(status: ControlStatus) {
     };
   }));
   const snapshot = requireMatchingValues(snapshots, "PUBLIC_VAULT_RPC_DISAGREEMENT");
+  status.balances.holderMstrxRaw = snapshot.holderRaw;
+  status.balances.reserveMstrxRaw = snapshot.reserveRaw;
   await writeDurableJson(resolve(process.env.PUBLIC_DATA_ROOT || "data/public", "snapshots", "solana-vaults.json"), { ...snapshot, updatedAt: Date.now() });
   return true;
 }
@@ -200,11 +356,13 @@ async function verifyPrelaunch(status: ControlStatus) {
   const consensus = await finalizedConsensus(urls);
   const owner = new PublicKey(required("SOLANA_ADMIN_OWNER"));
   const creator = await loadKeypair(required("SOLANA_CREATOR_KEYPAIR_PATH"));
+  const admin = await loadKeypair(process.env.SOLANA_ADMIN_KEYPAIR_PATH?.trim() || required("SOLANA_CREATOR_KEYPAIR_PATH"));
   const operator = await loadKeypair(required("SOLANA_OPERATOR_KEYPAIR_PATH"));
   const holder = await loadKeypair(required("SOLANA_HOLDER_SETTLEMENT_KEYPAIR_PATH"));
   const reserve = new PublicKey(required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"));
   const recovery = new PublicKey(required("SOLANA_RECOVERY_PUBLIC_KEY"));
   if (!creator.publicKey.equals(new PublicKey(required("SOLANA_CREATOR_PUBLIC_KEY")))) throw new Error("CREATOR_KEYPAIR_MISMATCH");
+  if (!admin.publicKey.equals(owner)) throw new Error("GOVERNANCE_ADMIN_KEYPAIR_MISMATCH");
   const expectedOperator = required("SOLANA_OPERATOR_PUBLIC_KEY");
   if (!operator.publicKey.equals(new PublicKey(expectedOperator))) throw new Error("OPERATOR_KEYPAIR_MISMATCH");
   if (!holder.publicKey.equals(new PublicKey(required("SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY")))) throw new Error("HOLDER_KEYPAIR_MISMATCH");
@@ -212,6 +370,8 @@ async function verifyPrelaunch(status: ControlStatus) {
     { owner, creator: creator.publicKey, operator: operator.publicKey, holder: holder.publicKey, reserve, recovery },
     sharedAdminCreatorEnabled(process.env.SOLANA_SHARED_ADMIN_CREATOR),
   );
+  // The reserve is an ordinary owner-controlled wallet, not a deployed program vault.
+  status.governance = undefined;
 
   const snapshots = await Promise.all(urls.map(async (url) => {
     const mint = await getMint(new Connection(url, "finalized"), mstrxMint(), "finalized", TOKEN_2022_PROGRAM_ID);
@@ -234,7 +394,6 @@ async function verifyPrelaunch(status: ControlStatus) {
       throw new Error("CREATOR_MSTRX_FEE_VAULT_NOT_EMPTY");
     }
   }
-  await probeBitqueryLaunchReadiness();
   status.launch.configured = true;
   status.services["solana-control-runner"] = { ok: true, updatedAt: Date.now(), detail: `MSTRx custom-pair ready at finalized slot ${consensus.slot}` };
 }
@@ -303,34 +462,52 @@ async function completeLaunchActivation(
   const detail = `${launch.mint}:${launch.signature || "manual"}`;
   await steps.publishHeartbeat("solana-launch-detector", true, detail);
 
-  status.launch = { ...pendingStatus.launch, armed: false, activated: true };
+  status.launch = { ...pendingStatus.launch, armed: false, governanceBindState: undefined, activated: true };
+  status.governance = undefined;
   status.automationState = "running";
   status.services["solana-launch-detector"] = { ok: true, updatedAt: Date.now(), detail };
 }
 
-async function activateLaunch(status: ControlStatus, mint: string, slot: number, signature: string) {
-  const facts = await verifyFixedMstrxPumpLaunch({
-    rpcUrls: rpcUrls(),
-    mint,
+function markGovernanceBindPending(status: ControlStatus) {
+  status.launch.governanceBindState = "pending";
+  status.services["solana-launch-detector"] = { ok: true, updatedAt: Date.now(), detail: "governance-bind-pending" };
+  // No part of the public runtime is marked activated until finalized binding.
+  return false;
+}
+
+async function activateLaunch(status: ControlStatus, candidate: PumpCreateCandidate) {
+  assertFixedMstrxPumpLaunch({
+    ...candidate,
     expectedCreator: required("SOLANA_CREATOR_PUBLIC_KEY"),
     expectedQuoteMint: required("SOLANA_MSTRX_MINT"),
   });
-  await completeLaunchActivation(status, { mint: facts.mint, slot, signature }, {
+  const facts = await verifyFixedMstrxPumpLaunch({
+    rpcUrls: rpcUrls(),
+    mint: candidate.mint,
+    expectedCreator: required("SOLANA_CREATOR_PUBLIC_KEY"),
+    expectedQuoteMint: required("SOLANA_MSTRX_MINT"),
+  });
+  if (facts.mint !== candidate.mint || facts.creator !== candidate.creator
+    || facts.quoteMint !== candidate.quoteMint || facts.tokenProgram !== candidate.tokenProgram
+    || candidate.slot > facts.finalizedSlot) throw new Error("PUMP_LAUNCH_EVENT_STATE_MISMATCH");
+  await completeLaunchActivation(status, { mint: facts.mint, slot: candidate.slot, signature: candidate.signature }, {
     ensureAtas: () => ensureFeeAtas(new Connection(required("SOLANA_RPC_PRIMARY_URL"), "confirmed")),
     publishConfig: publishRuntimeConfig,
     publishHeartbeat: saveHeartbeat,
   });
+  return true;
 }
 
 async function automaticLaunchTick(status: ControlStatus) {
   if (!status.launch.armed || status.launch.activated || !status.launch.armedAt) return false;
-  const candidate = await detectAgreedCreatorPumpLaunch({
+  const candidate = await detectDurableAgreedCreatorPumpLaunch({
     rpcUrls: rpcUrls() as [string, string],
     creator: required("SOLANA_CREATOR_PUBLIC_KEY"),
     armedAtMs: status.launch.armedAt,
+    stateRoot: resolve(process.env.SOLANA_STATE_ROOT || "data/solana"),
   });
   if (!candidate) return false;
-  await activateLaunch(status, candidate.mint, candidate.slot, candidate.signature);
+  await activateLaunch(status, candidate);
   return true;
 }
 
@@ -402,6 +579,23 @@ async function automaticRewardTick(status: ControlStatus) {
   return true;
 }
 
+async function automaticOwedRetryTick(status: ControlStatus) {
+  if (process.env.SOLANA_AUTO_REWARDS === "false") return false;
+  if (!status.launch.activated || status.automationState !== "running" || status.conversionsPaused) return false;
+  const result = await retryOwedRewardPayments(rewardEnvironment(status));
+  status.services["solana-owed-reward-retry"] = {
+    ok: true, updatedAt: Date.now(), detail: `processed ${result.processed}; outstanding ${result.remaining}`,
+  };
+  await saveHeartbeat("solana-owed-reward-retry", true, status.services["solana-owed-reward-retry"].detail);
+  // Persist the healthy/no-debt state too, so a previous retry failure cannot
+  // remain visible as an indefinitely stale service status.
+  return true;
+}
+
+function parkUnreleasedLaunch(status: ControlStatus) {
+  return status;
+}
+
 async function recoverCreatorMstrx(status: ControlStatus) {
   if (!status.conversionsPaused) throw new Error("PAUSE_REQUIRED");
   await ensureFeeAtas(new Connection(required("SOLANA_RPC_PRIMARY_URL"), "confirmed"));
@@ -429,25 +623,58 @@ async function consumeControlNonce(request: ControlRequest) {
 
 async function dispatch(request: ControlRequest, status: ControlStatus) {
   verifySignedSolanaControlAction(request, required("SOLANA_ADMIN_OWNER"));
+  if (["withdraw_free_reserve", "finalize_vote", "create_proposal", "create_revote", "publish_snapshot",
+    "execute_lock_mstrx", "execute_buyback", "execute_marketing_sale", "release_lock_mstrx"].includes(request.action)) {
+    requireGovernanceExecutionReleased();
+  }
+  if (request.action === "withdraw_free_reserve" && !SOLANA_GOVERNANCE_RESERVE_WITHDRAWAL_RELEASED) {
+    throw new Error("RESERVE_WITHDRAWAL_NOT_RELEASED");
+  }
+  if (request.action === "finalize_vote" && !SOLANA_GOVERNANCE_FINALIZE_RELEASED) {
+    throw new Error("GOVERNANCE_FINALIZE_NOT_RELEASED");
+  }
+  if (["create_proposal", "create_revote", "publish_snapshot"].includes(request.action)
+    && !SOLANA_GOVERNANCE_PROPOSAL_CONTROL_RELEASED) {
+    throw new Error("GOVERNANCE_PROPOSAL_NOT_RELEASED");
+  }
   await consumeControlNonce(request);
   switch (request.action) {
     case "verify_launch_config": await verifyPrelaunch(status); break;
     case "arm_launch_detection":
-      if (!status.launch.configured) throw new Error("LAUNCH_NOT_CONFIGURED");
-      await probeBitqueryLaunchReadiness();
+      if (status.launch.armed || status.launch.activated) throw new Error("DETECTOR_ALREADY_ARMED");
+      await verifyPrelaunch(status);
+      {
+        const creator = required("SOLANA_CREATOR_PUBLIC_KEY");
+        const stateRoot = resolve(process.env.SOLANA_STATE_ROOT || "data/solana");
+        const previous = await resumeDurableCreatorPumpLaunchScan({
+          creator, stateRoot, expectedArmedAtMs: status.launch.armedAt,
+        });
+        if (previous !== undefined) status.launch.armedAt = previous;
+        else {
+          if (status.launch.armedAt !== undefined) throw new Error("PUMP_LAUNCH_SCAN_STATE_MISSING");
+          status.launch.armedAt = Date.now();
+          await armDurableCreatorPumpLaunchScan({
+            rpcUrls: rpcUrls() as [string, string], creator,
+            armedAtMs: status.launch.armedAt, stateRoot,
+          });
+        }
+      }
       status.launch.armed = true;
-      status.launch.armedAt = Date.now();
       break;
-    case "disarm_launch_detection": status.launch.armed = false; status.launch.armedAt = undefined; break;
+    // Disarm pauses scanning, but the original boundary survives for a safe
+    // owner-controlled resume. Re-anchoring would skip a token minted meanwhile.
+    case "disarm_launch_detection": status.launch.armed = false; break;
     case "activate_postlaunch": {
       if (!status.launch.armed || !status.launch.armedAt) throw new Error("DETECTOR_NOT_ARMED");
-      const candidate = await detectAgreedCreatorPumpLaunch({
+      const candidate = await detectDurableAgreedCreatorPumpLaunch({
         rpcUrls: rpcUrls() as [string, string],
         creator: required("SOLANA_CREATOR_PUBLIC_KEY"),
         armedAtMs: status.launch.armedAt,
+        stateRoot: resolve(process.env.SOLANA_STATE_ROOT || "data/solana"),
       });
       if (!candidate) throw new Error("PUMP_LAUNCH_NOT_FINALIZED");
-      await activateLaunch(status, candidate.mint, candidate.slot, candidate.signature);
+      // The detector activates automatically after both RPCs verify the mint.
+      await activateLaunch(status, candidate);
       break;
     }
     case "sweep_curve_fees": await executeFeeSweep(status, "curve"); break;
@@ -465,6 +692,95 @@ async function dispatch(request: ControlRequest, status: ControlStatus) {
       status.conversionsPaused = false;
       break;
     case "recover_uncommitted": await recoverCreatorMstrx(status); break;
+    case "withdraw_free_reserve": {
+      if (!request.withdrawal) throw new Error("RESERVE_WITHDRAWAL_INTENT_REQUIRED");
+      const ledger = await withdrawFreeReserve(freeWithdrawalEnvironment(status), {
+        requestId: request.id, nonce: request.nonce, intent: request.withdrawal,
+      });
+      status.governanceWithdrawal = withdrawalProgress(ledger);
+      // Until both RPCs finalize, the old free balance must not be offered as
+      // an actionable quote in the owner panel.
+      if (status.governance) status.governance.updatedAt = 0;
+      break;
+    }
+    case "finalize_vote": {
+      if (!request.finalization) throw new Error("GOVERNANCE_FINALIZE_INTENT_REQUIRED");
+      const ledger = await finalizeVote(finalizeVoteEnvironment(status), {
+        requestId: request.id, nonce: request.nonce, intent: request.finalization,
+      });
+      status.governanceFinalization = finalizationProgress(ledger);
+      status.governanceProposal = undefined;
+      if (status.governance) status.governance.updatedAt = 0;
+      break;
+    }
+    case "create_proposal":
+    case "create_revote": {
+      if (!request.proposalCreation) throw new Error("GOVERNANCE_PROPOSAL_INTENT_REQUIRED");
+      const ledger = await createProposalControl(proposalControlEnvironment(status), {
+        requestId: request.id, authorization: request,
+      });
+      status.governanceCreation = proposalCreationProgress(ledger);
+      status.governanceProposal = undefined;
+      if (status.governance) status.governance.updatedAt = 0;
+      break;
+    }
+    case "publish_snapshot": {
+      if (!request.snapshotPublication) throw new Error("GOVERNANCE_SNAPSHOT_INTENT_REQUIRED");
+      if (!status.launch.activated || status.launch.governanceBindState !== "bound"
+        || !status.launch.detectedMint) throw new Error("GOVERNANCE_NOT_BOUND");
+      const base = proposalControlEnvironment(status);
+      const summary = await publishOwnerGovernanceSnapshot({
+        rpcUrls: base.rpcUrls, governanceProgram: base.governanceProgram,
+        expectedProgramCodeSha256: base.expectedProgramCodeSha256,
+        capitalMint: base.capitalMint, reserveMint: base.reserveMint,
+        reserveAuthority: required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"), admin: base.admin,
+        stateRoot: base.stateRoot, publicDataRoot: base.publicDataRoot,
+        excluded: rewardEnvironment(status).excluded,
+      }, request.snapshotPublication);
+      status.governanceSnapshot = summary;
+      break;
+    }
+    case "execute_lock_mstrx": {
+      if (!request.lockExecution) throw new Error("GOVERNANCE_LOCK_INTENT_REQUIRED");
+      const ledger = await executeLockDecision(freeWithdrawalEnvironment(status), {
+        requestId: request.id, authorization: request,
+      });
+      status.governanceLockExecution = lockExecutionProgress(ledger);
+      status.governanceProposal = undefined;
+      if (status.governance) status.governance.updatedAt = 0;
+      break;
+    }
+    case "execute_buyback": {
+      if (!request.buybackExecution) throw new Error("GOVERNANCE_BUYBACK_INTENT_REQUIRED");
+      const ledger = await executeBuybackDecision(freeWithdrawalEnvironment(status), {
+        requestId: request.id, authorization: request as SignedSolanaControlAction & {
+          action: "execute_buyback"; buybackExecution: NonNullable<SignedSolanaControlAction["buybackExecution"]> },
+      });
+      status.governanceBuybackExecution = buybackExecutionProgress(ledger);
+      status.governanceProposal = undefined;
+      if (status.governance) status.governance.updatedAt = 0;
+      break;
+    }
+    case "execute_marketing_sale": {
+      if (!request.marketingExecution) throw new Error("GOVERNANCE_MARKETING_INTENT_REQUIRED");
+      const ledger = await executeMarketingDecision(freeWithdrawalEnvironment(status), {
+        requestId: request.id, authorization: request,
+      });
+      status.governanceMarketingExecution = marketingExecutionProgress(ledger);
+      status.governanceProposal = undefined;
+      if (status.governance) status.governance.updatedAt = 0;
+      break;
+    }
+    case "release_lock_mstrx": {
+      if (!request.lockRelease) throw new Error("GOVERNANCE_LOCK_RELEASE_INTENT_REQUIRED");
+      const ledger = await releaseMatureMstrxLock(freeWithdrawalEnvironment(status), {
+        requestId: request.id, authorization: request as SignedLockRelease,
+      });
+      status.governanceLockRelease = lockReleaseProgress(ledger);
+      status.governanceProposal = undefined;
+      if (status.governance) status.governance.updatedAt = 0;
+      break;
+    }
     case "prepare_reward_epoch": {
       if (!status.launch.activated) throw new Error("AUTOMATION_NOT_ACTIVE");
       if (!status.conversionsPaused) { status.conversionsPaused = true; status.rewardEpochOwnsPause = true; }
@@ -536,12 +852,26 @@ async function restoreRequestOutcomeMarkers() {
 }
 
 async function main() {
-  await saveStatus(await readStatus());
+  assertSolanaRunnerSingleton("control-runner");
+  const initialStatus = await readStatus();
+  // A cached proposal result is never carried across process restarts before
+  // a new pair of finalized provider reads verifies it again.
+  initialStatus.governanceProposal = undefined;
+  parkUnreleasedLaunch(initialStatus);
+  await saveStatus(initialStatus);
   await restoreRequestOutcomeMarkers();
   let lastLaunchTick = 0;
   let lastFeeTick = 0;
   let lastRewardTick = 0;
+  let lastOwedRetryTick = 0;
   let lastPublicBalanceTick = 0;
+  let lastGovernanceWithdrawalTick = 0;
+  let lastGovernanceFinalizeTick = 0;
+  let lastGovernanceCreationTick = 0;
+  let lastGovernanceLockTick = 0;
+  let lastGovernanceBuybackTick = 0;
+  let lastGovernanceMarketingTick = 0;
+  let lastGovernanceLockReleaseTick = 0;
   while (true) {
     const processed = await processOnce();
     const now = Date.now();
@@ -580,14 +910,185 @@ async function main() {
         await Promise.all([saveStatus(status), saveHeartbeat("solana-distributor", false, detail)]);
       }
     }
+    if (!processed && now - lastOwedRetryTick >= 15 * 60_000) {
+      lastOwedRetryTick = now;
+      const status = await readStatus();
+      try {
+        if (await automaticOwedRetryTick(status)) await saveStatus(status);
+      } catch {
+        const detail = "OWED_REWARD_RETRY_FAILED";
+        status.services["solana-owed-reward-retry"] = { ok: false, updatedAt: Date.now(), detail };
+        await Promise.all([saveStatus(status), saveHeartbeat("solana-owed-reward-retry", false, detail)]);
+      }
+    }
     if (!processed && now - lastPublicBalanceTick >= 60_000) {
       lastPublicBalanceTick = now;
       const status = await readStatus();
       try {
-        if (await publishPublicBalances(status)) await saveHeartbeat("solana-public-snapshot", true);
+        if (await publishPublicBalances(status)) {
+          await saveStatus(status);
+          await saveHeartbeat("solana-public-snapshot", true);
+        }
       }
       catch {
+        status.governanceProposal = undefined;
+        if (status.governance) status.governance.updatedAt = 0;
+        await saveStatus(status);
         await saveHeartbeat("solana-public-snapshot", false, "PUBLIC_SNAPSHOT_FAILED");
+      }
+    }
+    if (!processed && SOLANA_GOVERNANCE_EXECUTION_RELEASED && now - lastGovernanceWithdrawalTick >= 15_000) {
+      lastGovernanceWithdrawalTick = now;
+      const status = await readStatus();
+      if (SOLANA_GOVERNANCE_RESERVE_WITHDRAWAL_RELEASED
+        && status.launch.activated && status.launch.governanceBindState === "bound") {
+        try {
+          const ledger = await reconcileFreeWithdrawal(freeWithdrawalEnvironment(status));
+          if (ledger && (!status.governanceWithdrawal || status.governanceWithdrawal.state !== ledger.state)) {
+            status.governanceWithdrawal = withdrawalProgress(ledger);
+            if (ledger.state === "finalized") {
+              const verified = await verifyGovernanceReserveRoute(rpcUrls() as [string, string], {
+                governanceProgram: required("SOLANA_GOVERNANCE_PROGRAM"),
+                expectedProgramCodeSha256: required("SOLANA_GOVERNANCE_PROGRAM_CODE_SHA256"),
+                reserveAuthority: required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY"),
+                reserveMint: required("SOLANA_MSTRX_MINT"),
+                capitalMint: status.launch.detectedMint!,
+                admin: required("SOLANA_ADMIN_OWNER"),
+              });
+              status.governance = governanceStatus(verified);
+            }
+            await saveStatus(status);
+          }
+        } catch {
+          status.services["solana-governance-withdrawal"] = { ok: false, updatedAt: Date.now(), detail: "WITHDRAWAL_RECONCILIATION_FAILED" };
+          await saveStatus(status);
+        }
+      }
+    }
+    if (!processed && SOLANA_GOVERNANCE_EXECUTION_RELEASED && now - lastGovernanceFinalizeTick >= 15_000) {
+      lastGovernanceFinalizeTick = now;
+      const status = await readStatus();
+      if (SOLANA_GOVERNANCE_FINALIZE_RELEASED
+        && status.launch.activated && status.launch.governanceBindState === "bound") {
+        try {
+          const ledger = await reconcileFinalizeVote(finalizeVoteEnvironment(status));
+          if (ledger && (!status.governanceFinalization || status.governanceFinalization.state !== ledger.state)) {
+            status.governanceFinalization = finalizationProgress(ledger);
+            status.governanceProposal = undefined;
+            if (status.governance) status.governance.updatedAt = 0;
+            await saveStatus(status);
+          }
+        } catch {
+          status.services["solana-governance-finalize"] = {
+            ok: false, updatedAt: Date.now(), detail: "GOVERNANCE_FINALIZE_RECONCILIATION_FAILED",
+          };
+          await saveStatus(status);
+        }
+      }
+    }
+    if (!processed && SOLANA_GOVERNANCE_EXECUTION_RELEASED && now - lastGovernanceCreationTick >= 15_000) {
+      lastGovernanceCreationTick = now;
+      const status = await readStatus();
+      if (SOLANA_GOVERNANCE_PROPOSAL_CONTROL_RELEASED
+        && status.launch.activated && status.launch.governanceBindState === "bound") {
+        try {
+          const ledger = await reconcileProposalControl(proposalControlEnvironment(status));
+          if (ledger && (!status.governanceCreation || status.governanceCreation.state !== ledger.state)) {
+            status.governanceCreation = proposalCreationProgress(ledger);
+            status.governanceProposal = undefined;
+            if (status.governance) status.governance.updatedAt = 0;
+            await saveStatus(status);
+          }
+        } catch {
+          status.services["solana-governance-proposal"] = {
+            ok: false, updatedAt: Date.now(), detail: "GOVERNANCE_PROPOSAL_RECONCILIATION_FAILED",
+          };
+          await saveStatus(status);
+        }
+      }
+    }
+    if (!processed && SOLANA_GOVERNANCE_EXECUTION_RELEASED && now - lastGovernanceLockTick >= 15_000) {
+      lastGovernanceLockTick = now;
+      const status = await readStatus();
+      if (SOLANA_GOVERNANCE_EXECUTION_RELEASED
+        && status.launch.activated && status.launch.governanceBindState === "bound") {
+        try {
+          const ledger = await reconcileLockExecution(freeWithdrawalEnvironment(status));
+          if (ledger && (!status.governanceLockExecution || status.governanceLockExecution.state !== ledger.state)) {
+            status.governanceLockExecution = lockExecutionProgress(ledger);
+            status.governanceProposal = undefined;
+            if (status.governance) status.governance.updatedAt = 0;
+            await saveStatus(status);
+          }
+        } catch {
+          status.services["solana-governance-lock"] = {
+            ok: false, updatedAt: Date.now(), detail: "GOVERNANCE_LOCK_RECONCILIATION_FAILED",
+          };
+          await saveStatus(status);
+        }
+      }
+    }
+    if (!processed && SOLANA_GOVERNANCE_EXECUTION_RELEASED && now - lastGovernanceBuybackTick >= 15_000) {
+      lastGovernanceBuybackTick = now;
+      const status = await readStatus();
+      if (SOLANA_GOVERNANCE_EXECUTION_RELEASED
+        && status.launch.activated && status.launch.governanceBindState === "bound") {
+        try {
+          const ledger = await reconcileBuybackExecution(freeWithdrawalEnvironment(status));
+          if (ledger && (!status.governanceBuybackExecution || status.governanceBuybackExecution.state !== ledger.state)) {
+            status.governanceBuybackExecution = buybackExecutionProgress(ledger);
+            status.governanceProposal = undefined;
+            if (status.governance) status.governance.updatedAt = 0;
+            await saveStatus(status);
+          }
+        } catch {
+          status.services["solana-governance-buyback"] = {
+            ok: false, updatedAt: Date.now(), detail: "GOVERNANCE_BUYBACK_RECONCILIATION_FAILED",
+          };
+          await saveStatus(status);
+        }
+      }
+    }
+    if (!processed && SOLANA_GOVERNANCE_EXECUTION_RELEASED && now - lastGovernanceMarketingTick >= 15_000) {
+      lastGovernanceMarketingTick = now;
+      const status = await readStatus();
+      if (SOLANA_GOVERNANCE_EXECUTION_RELEASED
+        && status.launch.activated && status.launch.governanceBindState === "bound") {
+        try {
+          const ledger = await reconcileMarketingExecution(freeWithdrawalEnvironment(status));
+          if (ledger && (!status.governanceMarketingExecution || status.governanceMarketingExecution.state !== ledger.state)) {
+            status.governanceMarketingExecution = marketingExecutionProgress(ledger);
+            status.governanceProposal = undefined;
+            if (status.governance) status.governance.updatedAt = 0;
+            await saveStatus(status);
+          }
+        } catch {
+          status.services["solana-governance-marketing"] = {
+            ok: false, updatedAt: Date.now(), detail: "GOVERNANCE_MARKETING_RECONCILIATION_FAILED",
+          };
+          await saveStatus(status);
+        }
+      }
+    }
+    if (!processed && SOLANA_GOVERNANCE_EXECUTION_RELEASED && now - lastGovernanceLockReleaseTick >= 15_000) {
+      lastGovernanceLockReleaseTick = now;
+      const status = await readStatus();
+      if (SOLANA_GOVERNANCE_EXECUTION_RELEASED
+        && status.launch.activated && status.launch.governanceBindState === "bound") {
+        try {
+          const ledger = await reconcileLockRelease(freeWithdrawalEnvironment(status));
+          if (ledger && (!status.governanceLockRelease || status.governanceLockRelease.state !== ledger.state)) {
+            status.governanceLockRelease = lockReleaseProgress(ledger);
+            status.governanceProposal = undefined;
+            if (status.governance) status.governance.updatedAt = 0;
+            await saveStatus(status);
+          }
+        } catch {
+          status.services["solana-governance-lock-release"] = {
+            ok: false, updatedAt: Date.now(), detail: "GOVERNANCE_LOCK_RELEASE_RECONCILIATION_FAILED",
+          };
+          await saveStatus(status);
+        }
       }
     }
     if (!processed) await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000));
@@ -596,4 +1097,4 @@ async function main() {
 
 if (process.argv[1]?.endsWith("controlRunner.ts")) void main();
 
-export { automaticFeeTick, automaticLaunchTick, automaticRewardTick, completeLaunchActivation, distinctFeeOwners, dispatch, processOnce };
+export { automaticFeeTick, automaticLaunchTick, automaticOwedRetryTick, automaticRewardTick, completeLaunchActivation, distinctFeeOwners, dispatch, markGovernanceBindPending, parkUnreleasedLaunch, processOnce };

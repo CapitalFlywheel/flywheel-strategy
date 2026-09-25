@@ -67,11 +67,9 @@ Raw-unit remainders are assigned deterministically by largest remainder. A walle
 
 ## Strategic reserve
 
-The strategic reserve is isolated from holder reward inventory
+The strategic reserve receives 40% of actual collected MSTRx creator fees in a separate user-controlled wallet, isolated from holder reward inventory
 
-Potential reserve actions include accumulating MSTRx, CAPITAL buyback and hold, buyback and burn, buyback and lock, MSTRx lock or a disclosed marketing allocation
-
-No Solana governance program has been deployed or independently reviewed. Public voting and automatic execution of reserve decisions are disabled. The reserve remains in a separately controlled wallet, not in an immutable holder-governed vault
+There is no deployed Solana governance program or binding holder vote. The reserve wallet owner can control its funds directly; reserve spending is not automatic or holder-enforced
 
 The fee split does not give the owner access to completed holder payouts
 

@@ -1,6 +1,6 @@
 # Solana provider setup
 
-The website can stay online without private RPC credentials. Do not start the fee keeper or holder indexer until the production providers are configured and verified
+The landing page can load without RPC credentials, but live wallet/governance reads require the protected web RPC upstream. Do not start the fee keeper or holder indexer until the two independent backend providers are configured and verified
 
 ## Primary RPC: existing Alchemy account
 
@@ -11,11 +11,11 @@ The website can stay online without private RPC credentials. Do not start the fe
 5. Limit the key to the server's outbound public IP if the Alchemy Solana app offers an IP allowlist; confirm reads and transaction submission still work after it propagates
 6. Set a usage alert and inspect the dashboard's CU method breakdown during rehearsal. The old Robinhood endpoint is not a Solana endpoint and must not be reused
 
-Creating the Solana app under the same account uses the account's current Pay As You Go billing. Alchemy's current public pricing page lists $0.525 per million CUs for Pay As You Go and no included PAYG base CUs. Confirm the rate and any account-specific terms in the dashboard before accepting costs
+Check the current rate, included usage and any account-specific billing terms in the Alchemy dashboard before accepting costs
 
 ## Independent fallback RPC
 
-Use a provider other than Alchemy. Helius can be tried on its Free plan for setup; its published free tier includes 1M credits per month and 10 RPC requests per second. The Developer tier is currently listed at $49/month with 10M credits and 50 requests per second. Upgrade only if actual load requires it
+Use a provider other than Alchemy. Helius can be tried for setup, but check its current limits and upgrade if measured full-block scan traffic requires it
 
 1. Create a Helius Solana Mainnet project
 2. Copy its HTTPS RPC URL into the protected server file as `SOLANA_RPC_FALLBACK_URL`
@@ -24,17 +24,16 @@ Use a provider other than Alchemy. Helius can be tried on its Free plan for setu
 
 The two RPC URLs must be HTTPS and have different provider hostnames. Neither belongs in Git, browser JavaScript, chat messages or a public `VITE_*` variable
 
-## Mint-wide holder-history source
+## Complete holder-history source
 
-RPC endpoints alone do not reliably list every CAPITAL transfer by mint, because some SPL transfer transactions do not mention the mint address. The current indexer uses Bitquery's mint-filtered Solana Transfers API to discover signatures and then verifies every new transaction against both independent RPCs
+The active holder indexer scans every produced finalized block from the CAPITAL launch slot using both independent RPC providers. Mint-filtered signature queries alone are insufficient because some token transfers do not mention the mint in the transaction's account keys. Each provider must therefore support historical `getBlocks` and full `getBlock` reads, including v1 transactions and token-balance metadata. The indexer stops on missing history or disagreement rather than distributing rewards from a partial snapshot
 
-1. Create a Bitquery account and verify that the plan allows the Solana realtime Transfers query by mint
-2. In Bitquery, open **Authorization → Applications → Tokens** for the application and generate a manual API V2 access token. If the application displays `Client Secret: N/A`, this token route does not require the secret. Do not use the temporary token shown by IDE code generation
-3. Store the raw token (without the `Bearer` prefix) only as `BITQUERY_API_KEY` in the protected server environment. Record its expiry and rotate it before then; a static token cannot refresh itself. When a working Client ID and Client Secret are available, the runner can instead use both OAuth fields for automatic refresh
-4. Before mainnet payouts, prove that the source includes the Pump creation transaction, a regular holder-to-holder transfer and the Pump-to-PumpSwap migration; otherwise the indexer stops
-5. Confirm a historical backfill arrangement for an outage longer than six hours. The current realtime adapter deliberately stops rather than paying from a partial history
+1. Verify both providers can return the same historical finalized blocks, not merely recent account balances
+2. Estimate and monitor the credits and bandwidth for a two-provider full-block scan plus relevant transaction rereads; this is materially heavier than a mint-filtered query and a free fallback plan may not sustain it
+3. During the authorized canary, prove the scan covers the Pump creation transaction, a regular holder-to-holder transfer and Pump-to-PumpSwap migration before allowing rewards
+4. Keep enough archival access to repair long outages from the last verified checkpoint without advancing the holder cursor from incomplete history
 
-Bitquery currently lists its Solana token transfers/balances pack at approximately $500/month ($400/month on annual billing). Do not purchase it solely on this document: confirm the exact current product, coverage and cost with Bitquery and compare it with alternative indexing arrangements before approving production spend
+Bitquery may be retained for optional diagnostics, but no Bitquery account or token is required to verify launch configuration, arm detection or calculate payable holder rewards
 
 ## Protected environment boundary
 

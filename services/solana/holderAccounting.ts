@@ -48,6 +48,7 @@ export class SolanaHoldingEngine {
   private readonly lastAccruedAt = new Map<string, number>();
   private readonly seen = new Set<string>();
   private readonly excluded: Set<string>;
+  private lastEventTimestamp: number | undefined;
 
   constructor(private readonly start: number, private readonly end: number, excluded: Iterable<string>) {
     if (end <= start) throw new Error("INVALID_WINDOW");
@@ -55,10 +56,15 @@ export class SolanaHoldingEngine {
   }
 
   apply(transfer: SolanaTransfer) {
-    if (transfer.timestamp > this.end) return;
     if (transfer.rawAmount < 0n) throw new Error("NEGATIVE_AMOUNT");
     const eventId = `${transfer.signature}:${transfer.slot}:${transfer.instructionIndex}`;
     if (this.seen.has(eventId)) return;
+    if (!Number.isSafeInteger(transfer.timestamp) || transfer.timestamp < 0
+      || this.lastEventTimestamp !== undefined && transfer.timestamp < this.lastEventTimestamp) {
+      throw new Error("HOLDER_EVENT_TIME_REGRESSION");
+    }
+    this.lastEventTimestamp = transfer.timestamp;
+    if (transfer.timestamp > this.end) return;
     this.seen.add(eventId);
     const from = transfer.from ? key(transfer.from) : undefined;
     const to = transfer.to ? key(transfer.to) : undefined;
@@ -79,8 +85,12 @@ export class SolanaHoldingEngine {
   }
 
   private accrue(account: string, until: number) {
+    // Later epochs replay launch-to-date transfers to reconstruct current
+    // lots. Events before the reward window mutate lots but accrue no weight.
+    if (until <= this.start) return;
     const start = Math.max(this.lastAccruedAt.get(account) ?? this.start, this.start);
     const end = Math.min(until, this.end);
+    if (end < start) throw new Error("HOLDER_ACCRUAL_TIME_REGRESSION");
     if (end <= start || this.excluded.has(account)) { this.lastAccruedAt.set(account, end); return; }
     const added = (this.lots.get(account) ?? []).reduce(
       (sum, lot) => sum + weightedRawSeconds(lot.rawAmount, lot.acquiredAt, start, end), 0n,

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#fff0cb"/><stop offset=".15" stop-color="#ffbc73"/><stop offset=".28" stop-color="#ff6908"/><stop offset=".43" stop-color="#783007"/><stop offset=".56" stop-color="#21130b"/><stop offset=".7" stop-color="#ff6500"/><stop offset=".85" stop-color="#ffca91"/><stop offset="1" stop-color="#ff6a00"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#fff0cc"/><stop offset=".3" stop-color="#b9520f"/><stop offset=".7" stop-color="#542007"/><stop offset="1" stop-color="#ff8c2b"/></linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="42" fill="#070707" stroke="#ff6800" stroke-width="1"/>
+  <circle cx="50" cy="50" r="35" fill="none" stroke="url(#metal)" stroke-width="14"/>
+  <circle cx="50" cy="50" r="28" fill="none" stroke="url(#inner)" stroke-width="2"/>
+  <path d="M19 31A37 37 0 0 1 61 15" stroke="#fff1d2" stroke-width="1.5" fill="none" opacity=".85"/>
+  <path d="M80 69A37 37 0 0 1 41 86" stroke="#ffa84e" stroke-width="1.5" fill="none"/>
+</svg>

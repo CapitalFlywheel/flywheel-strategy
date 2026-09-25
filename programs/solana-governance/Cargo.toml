@@ -1,0 +1,22 @@
+[package]
+name = "flywheel-solana-governance"
+version = "0.1.0"
+edition = "2021"
+description = "Non-custodial, bounded holder-voting core for Flywheel Strategy"
+license = "UNLICENSED"
+
+[lib]
+name = "flywheel_solana_governance"
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = []
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "=0.31.2"
+anchor-spl = "=0.31.2"

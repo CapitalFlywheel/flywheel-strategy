@@ -11,8 +11,8 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { rpcTransport } from "../shared/rpc";
+import { nonceManager, privateKeyToAccount } from "viem/accounts";
+import { rpcTransport, transactionRpcTransport } from "../shared/rpc";
 import {
   PONS_FACTORY,
   normalizePrelaunchManifest,
@@ -96,11 +96,15 @@ async function disarm() {
 }
 
 async function keepMigrationMoving(manifest: PrelaunchManifest, token: Address, detected: object) {
-  const account = privateKeyToAccount(required("KEEPER_PRIVATE_KEY") as Hex);
+  const account = privateKeyToAccount(required("KEEPER_PRIVATE_KEY") as Hex, { nonceManager });
   if (account.address.toLowerCase() !== manifest.automation.toLowerCase()) {
     throw new Error("KEEPER_PRIVATE_KEY_DOES_NOT_MATCH_AUTOMATION_ADDRESS");
   }
-  const walletClient = createWalletClient({ chain, transport: rpcTransport(process.env.ROBINHOOD_RPC_URL, process.env.ROBINHOOD_RPC_FALLBACK_URL), account });
+  const walletClient = createWalletClient({
+    chain,
+    transport: transactionRpcTransport(process.env.ROBINHOOD_RPC_URL),
+    account,
+  });
 
   while (true) {
     try {

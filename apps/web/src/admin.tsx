@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { Address, Hex } from "viem";
 import "./admin.css";
 import { AdminGovernance } from "./AdminGovernance";
+import { AdminReserveExit } from "./AdminReserveExit";
 import { LaunchWizard } from "./LaunchWizard";
 import {
   connectInjectedWallet,
@@ -263,6 +264,8 @@ export function AdminPanel() {
         config={config}
         keeperRunning={Boolean(status.services["governance-keeper"])}
       />
+
+      <AdminReserveExit connection={connection} isOwner={isOwner} config={config} />
 
       <section className="admin-addresses">
         <div><span>PROJECT TOKEN</span><b>{shortAddress(config?.projectToken)}</b></div>

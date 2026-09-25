@@ -21,3 +21,4 @@ apps/web/public/snapshots/latest.json
 apps/web/public/snapshots/market-status.json
 apps/web/public/governance/latest-weights.json
 apps/web/public/governance/proposal-*.json
+programs/solana-governance/target/

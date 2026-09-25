@@ -22,4 +22,22 @@ describe("Solana holder accounting", () => {
     expect(result.batches).toHaveLength(2);
     expect(result.batches[0].id).toHaveLength(64);
   });
+
+  it("fails closed if later chain events move block time backward instead of double-counting age", () => {
+    const engine = new SolanaHoldingEngine(0, 10_800, []);
+    engine.apply({ signature: "mint", slot: 1, instructionIndex: 0, timestamp: 100, to: alice, rawAmount: 100n });
+    engine.apply({ signature: "later", slot: 2, instructionIndex: 0, timestamp: 200, from: alice, to: bob, rawAmount: 10n });
+    expect(() => engine.apply({ signature: "rewind", slot: 3, instructionIndex: 0,
+      timestamp: 150, from: alice, to: bob, rawAmount: 10n })).toThrow("HOLDER_EVENT_TIME_REGRESSION");
+  });
+
+  it("replays pre-window transfers to reconstruct a later epoch without accruing pre-window time", () => {
+    const engine = new SolanaHoldingEngine(1_500, 2_000, []);
+    engine.apply({ signature: "launch", slot: 1, instructionIndex: 0, timestamp: 1_000, to: alice, rawAmount: 100n });
+    engine.apply({ signature: "old-transfer", slot: 2, instructionIndex: 0,
+      timestamp: 1_200, from: alice, to: bob, rawAmount: 40n });
+    const weights = engine.finalize();
+    expect(weights.get(alice)).toBe(60n * 500n);
+    expect(weights.get(bob)).toBe(40n * 500n);
+  });
 });

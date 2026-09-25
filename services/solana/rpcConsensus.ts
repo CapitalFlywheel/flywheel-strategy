@@ -1,4 +1,5 @@
-import { Connection, type Commitment } from "@solana/web3.js";
+import { Connection, SolanaJSONRPCError, SolanaJSONRPCErrorCode, type Commitment } from "@solana/web3.js";
+import { MAX_SUPPORTED_SOLANA_TRANSACTION_VERSION } from "./rpcTransactionVersion";
 
 export interface FinalizedConsensus {
   slot: number;
@@ -14,6 +15,19 @@ export function assertIndependentRpcProviders(rpcUrls: readonly string[]) {
   return true;
 }
 
+function unavailableBlockAtSlot(error: unknown) {
+  // Some Solana RPCs raise these JSON-RPC errors instead of returning null
+  // for a skipped or not-yet-served finalized slot. Only these exact codes
+  // may be treated as an absent block; provider failures still abort.
+  const absentCodes: readonly number[] = [
+    SolanaJSONRPCErrorCode.JSON_RPC_SERVER_ERROR_BLOCK_NOT_AVAILABLE,
+    SolanaJSONRPCErrorCode.JSON_RPC_SERVER_ERROR_SLOT_SKIPPED,
+    SolanaJSONRPCErrorCode.JSON_RPC_SERVER_ERROR_LONG_TERM_STORAGE_SLOT_SKIPPED,
+    SolanaJSONRPCErrorCode.JSON_RPC_SERVER_ERROR_BLOCK_STATUS_NOT_AVAILABLE_YET,
+  ];
+  return error instanceof SolanaJSONRPCError && absentCodes.includes(error.code as number);
+}
+
 export async function finalizedConsensus(
   rpcUrls: readonly string[],
   commitment: Commitment = "finalized",
@@ -26,15 +40,20 @@ export async function finalizedConsensus(
   const highestSlot = Math.max(...slots);
   if (highestSlot - lowestSlot > maxSlotDrift) throw new Error("RPC_SLOT_DRIFT");
 
-  for (let slot = lowestSlot; slot > lowestSlot - 64; slot -= 1) {
+  for (let slot = lowestSlot; slot > lowestSlot - 64 && slot >= 0; slot -= 1) {
     const blockhashes = await Promise.all(connections.map(async (connection) => {
-      const block = await connection.getBlock(slot, {
-        commitment: "finalized",
-        maxSupportedTransactionVersion: 0,
-        transactionDetails: "none",
-        rewards: false,
-      });
-      return block?.blockhash;
+      try {
+        const block = await connection.getBlock(slot, {
+          commitment: "finalized",
+          maxSupportedTransactionVersion: MAX_SUPPORTED_SOLANA_TRANSACTION_VERSION,
+          transactionDetails: "none",
+          rewards: false,
+        });
+        return block?.blockhash;
+      } catch (error) {
+        if (unavailableBlockAtSlot(error)) return undefined;
+        throw error;
+      }
     }));
     if (blockhashes.every((hash) => !hash)) continue;
     if (!blockhashes[0] || blockhashes.some((hash) => hash !== blockhashes[0])) throw new Error("RPC_BLOCK_DISAGREEMENT");

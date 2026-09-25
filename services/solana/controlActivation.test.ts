@@ -1,5 +1,6 @@
 import { Keypair } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
+
 import { completeLaunchActivation, distinctFeeOwners } from "./controlRunner";
 
 type Status = Parameters<typeof completeLaunchActivation>[0];
@@ -17,7 +18,6 @@ function armedStatus(): Status {
 }
 
 const launch = { mint: "test-mint", slot: 456, signature: "test-signature" };
-
 describe("Solana launch activation", () => {
   it("creates one fee ATA per owner when creator and recovery are the same wallet", () => {
     const creator = Keypair.generate().publicKey;
@@ -62,6 +62,7 @@ describe("Solana launch activation", () => {
     expect(retry).toEqual(["atas", "runtime", "heartbeat"]);
     expect(status.launch).toMatchObject({ armed: false, activated: true, detectedMint: launch.mint, detectedSignature: launch.signature });
     expect(status.automationState).toBe("running");
+    expect(status.governance).toBeUndefined();
     expect(status.services["solana-launch-detector"]).toMatchObject({ ok: true, detail: `${launch.mint}:${launch.signature}` });
   });
 });

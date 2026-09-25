@@ -6,11 +6,14 @@ import {
   createWalletClient,
   defineChain,
   getAddress,
+  keccak256,
   parseAbi,
+  toHex,
   type Address,
   type Hex,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { nonceManager, privateKeyToAccount } from "viem/accounts";
+import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
 import { buildWeightSnapshotFromTransfers } from "../indexer/chainSnapshot";
 import { buildDistribution } from "../indexer/distribution";
 import { RewardCadenceTracker, type CadenceState } from "../indexer/rewardCadence";
@@ -19,7 +22,7 @@ import { reimburseGas } from "./reimburse";
 import { DEAD_ADDRESS, ZERO_ADDRESS, exclusionSet } from "../indexer/systemExclusions";
 import { writeHeartbeat } from "./heartbeat";
 import { updateTransferCache } from "../indexer/transferCache";
-import { rpcTransport } from "../shared/rpc";
+import { alchemyRpcUrl, rpcTransport, transactionRpcTransport } from "../shared/rpc";
 
 interface PublisherState {
   latestEpoch: number;
@@ -29,15 +32,40 @@ interface PublisherState {
   latestMarketCap?: MarketCapReading;
 }
 
+interface AutoPayoutEntry {
+  account: Address;
+  amountRaw: string;
+}
+
+interface AutomaticSnapshot {
+  epoch: number;
+  merkleRoot: Hex;
+  mstrRewardRaw: string;
+  distributor: Address;
+  distributorCumulativeClaimRaw: string;
+  allocationHash: Hex;
+  payoutEntries: AutoPayoutEntry[];
+  batchSize: number;
+}
+
 const rewardVaultAbi = parseAbi([
   "function latestEpoch() view returns (uint64)",
   "function merkleRoot() view returns (bytes32)",
   "function cumulativeAllocated() view returns (uint256)",
   "function totalClaimed() view returns (uint256)",
   "function mstr() view returns (address)",
+  "function claimed(address account) view returns (uint256)",
   "function publishDistribution(uint64 epoch,bytes32 newRoot,uint256 newCumulativeAllocated)",
 ]);
 const erc20Abi = parseAbi(["function balanceOf(address account) view returns (uint256)"]);
+const autoDistributorAbi = parseAbi([
+  "function latestFundedEpoch() view returns (uint64)",
+  "function epochs(uint64 epoch) view returns (uint256 funded,uint256 distributed,bytes32 allocationHash,bool finalized)",
+  "function batchProcessed(uint64 epoch,uint32 batchId) view returns (bool)",
+  "function fundEpoch(uint64 epoch,uint256 cumulativeClaim,bytes32[] proof,uint256 expectedAmount,bytes32 allocationHash)",
+  "function distributeBatch(uint64 epoch,uint32 batchId,address[] recipients,uint256[] amounts)",
+  "function finalizeEpoch(uint64 epoch)",
+]);
 
 function required(name: string): string {
   const value = process.env[name];
@@ -59,6 +87,8 @@ async function updatePublicHistory(entry: {
   mstrRewardRaw: string;
   merkleRoot: Hex;
   transactionHash?: Hex;
+  mode?: "claim" | "automatic";
+  distributor?: Address;
 }) {
   const path = join(publicSnapshotDir, "history.json");
   let history: typeof entry[] = [];
@@ -89,14 +119,14 @@ const chain = defineChain({
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [rpcUrl] } },
 });
-const account = privateKeyToAccount(required("ROOT_PUBLISHER_PRIVATE_KEY") as Hex);
+const account = privateKeyToAccount(required("ROOT_PUBLISHER_PRIVATE_KEY") as Hex, { nonceManager });
 const expectedPublisher = getAddress(required("ROOT_PUBLISHER_ADDRESS"));
 if (getAddress(account.address) !== expectedPublisher) {
   throw new Error("ROOT_PUBLISHER_PRIVATE_KEY_DOES_NOT_MATCH_CONFIGURED_ADDRESS");
 }
 const transport = rpcTransport(rpcUrl, process.env.ROBINHOOD_RPC_FALLBACK_URL);
 const publicClient = createPublicClient({ chain, transport });
-const walletClient = createWalletClient({ chain, transport, account });
+const walletClient = createWalletClient({ chain, transport: transactionRpcTransport(rpcUrl), account });
 const projectToken = getAddress(required("PROJECT_TOKEN_ADDRESS"));
 const launchBlock = BigInt(required("PROJECT_LAUNCH_BLOCK"));
 const launchTimestamp = Number(required("PROJECT_LAUNCH_TIMESTAMP"));
@@ -112,12 +142,106 @@ const publicSnapshotDir = process.env.PUBLIC_SNAPSHOT_DIR || "data/public/snapsh
 const transferCachePath = process.env.TRANSFER_CACHE_PATH || "data/transfer-events.json";
 const indexerConfirmations = BigInt(process.env.INDEXER_CONFIRMATIONS || "1000");
 const transferSource = (process.env.TRANSFER_SOURCE || (rpcUrl.includes("alchemy.com") ? "alchemy" : "logs")) as "alchemy" | "logs";
+const transferRpcUrl = transferSource === "alchemy"
+  ? alchemyRpcUrl(rpcUrl, process.env.ROBINHOOD_RPC_FALLBACK_URL)
+  : rpcUrl;
 const logChunkSize = BigInt(process.env.INDEXER_LOG_CHUNK_SIZE || (transferSource === "alchemy" ? "10" : "5000"));
 const configuredExclusions = (process.env.EXCLUDED_REWARD_ADDRESSES || "")
   .split(",")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
+const autoDistributor = process.env.AUTO_REWARD_DISTRIBUTOR_ADDRESS
+  ? getAddress(process.env.AUTO_REWARD_DISTRIBUTOR_ADDRESS)
+  : undefined;
+const autoBatchSize = Math.min(100, Math.max(1, Number(process.env.AUTO_REWARD_BATCH_SIZE || "60")));
 let running = false;
+
+async function submitAutomatic(
+  functionName: "fundEpoch" | "distributeBatch" | "finalizeEpoch",
+  args: readonly unknown[]
+): Promise<Hex> {
+  if (!autoDistributor) throw new Error("AUTO_REWARD_DISTRIBUTOR_ADDRESS_IS_REQUIRED");
+  const { request } = await publicClient.simulateContract({
+    account,
+    address: autoDistributor,
+    abi: autoDistributorAbi,
+    functionName,
+    args: args as never,
+  });
+  const hash = await walletClient.writeContract(request);
+  await publicClient.waitForTransactionReceipt({ hash });
+  try {
+    await reimburseGas(publicClient, walletClient, account, keeperVault, hash);
+  } catch (error) {
+    console.error(`Automatic reward reimbursement failed for ${hash}`, error);
+  }
+  return hash;
+}
+
+async function settleAutomaticPayout(snapshot: AutomaticSnapshot) {
+  if (!autoDistributor || getAddress(snapshot.distributor) !== autoDistributor) {
+    throw new Error("AUTOMATIC_SNAPSHOT_DISTRIBUTOR_MISMATCH");
+  }
+  const expectedAmount = BigInt(snapshot.mstrRewardRaw);
+  let payout = await publicClient.readContract({
+    address: autoDistributor,
+    abi: autoDistributorAbi,
+    functionName: "epochs",
+    args: [BigInt(snapshot.epoch)],
+  });
+  if (payout[0] === 0n) {
+    const tree = StandardMerkleTree.of<[string, string]>(
+      [[autoDistributor, snapshot.distributorCumulativeClaimRaw]],
+      ["address", "uint256"]
+    );
+    if (tree.root.toLowerCase() !== snapshot.merkleRoot.toLowerCase()) {
+      throw new Error("AUTOMATIC_DISTRIBUTOR_ROOT_MISMATCH");
+    }
+    await submitAutomatic("fundEpoch", [
+      BigInt(snapshot.epoch),
+      BigInt(snapshot.distributorCumulativeClaimRaw),
+      tree.getProof(0),
+      expectedAmount,
+      snapshot.allocationHash,
+    ]);
+    payout = await publicClient.readContract({
+      address: autoDistributor,
+      abi: autoDistributorAbi,
+      functionName: "epochs",
+      args: [BigInt(snapshot.epoch)],
+    });
+  }
+  if (payout[0] !== expectedAmount || payout[2].toLowerCase() !== snapshot.allocationHash.toLowerCase()) {
+    throw new Error("AUTOMATIC_EPOCH_FUNDING_MISMATCH");
+  }
+
+  const snapshotBatchSize = Math.min(100, Math.max(1, Number(snapshot.batchSize || autoBatchSize)));
+  for (let offset = 0, batchId = 0; offset < snapshot.payoutEntries.length; offset += snapshotBatchSize, batchId += 1) {
+    const alreadyProcessed = await publicClient.readContract({
+      address: autoDistributor,
+      abi: autoDistributorAbi,
+      functionName: "batchProcessed",
+      args: [BigInt(snapshot.epoch), batchId],
+    });
+    if (alreadyProcessed) continue;
+    const batch = snapshot.payoutEntries.slice(offset, offset + snapshotBatchSize);
+    await submitAutomatic("distributeBatch", [
+      BigInt(snapshot.epoch),
+      batchId,
+      batch.map((entry) => entry.account),
+      batch.map((entry) => BigInt(entry.amountRaw)),
+    ]);
+  }
+
+  payout = await publicClient.readContract({
+    address: autoDistributor,
+    abi: autoDistributorAbi,
+    functionName: "epochs",
+    args: [BigInt(snapshot.epoch)],
+  });
+  if (payout[1] !== expectedAmount) throw new Error("AUTOMATIC_EPOCH_NOT_FULLY_DISTRIBUTED");
+  if (!payout[3]) await submitAutomatic("finalizeEpoch", [BigInt(snapshot.epoch)]);
+}
 
 async function publishOneEpoch() {
   let state = await loadState(statePath, launchTimestamp);
@@ -135,6 +259,9 @@ async function publishOneEpoch() {
     if (recovery.merkleRoot.toLowerCase() !== onchainRoot.toLowerCase()) {
       throw new Error("RECOVERY_SNAPSHOT_ROOT_MISMATCH");
     }
+    if (recovery.mode === "automatic") {
+      await settleAutomaticPayout(recovery as AutomaticSnapshot);
+    }
     state = {
       ...state,
       latestEpoch: Number(onchainEpoch),
@@ -147,7 +274,10 @@ async function publishOneEpoch() {
       ),
     };
     await atomicJson(statePath, state);
-    const recoveredPublished = { ...recovery, status: "published-recovered" };
+    const recoveredPublished = {
+      ...recovery,
+      status: recovery.mode === "automatic" ? "airdropped-recovered" : "published-recovered",
+    };
     await atomicJson(recoveryPath, recoveredPublished);
     await atomicJson(join(publicSnapshotDir, "latest.json"), recoveredPublished);
     await updatePublicHistory({
@@ -157,6 +287,8 @@ async function publishOneEpoch() {
       mstrRewardRaw: recovery.mstrRewardRaw,
       merkleRoot: recovery.merkleRoot,
       transactionHash: recovery.transactionHash,
+      mode: recovery.mode || "claim",
+      distributor: recovery.distributor,
     });
   }
   if (Number(onchainEpoch) !== state.latestEpoch) {
@@ -215,12 +347,13 @@ async function publishOneEpoch() {
     process.env.PROJECT_TOKEN_LOCK_VAULT_ADDRESS,
     process.env.V4_MSTR_ADAPTER_ADDRESS,
     process.env.V3_MSTR_ADAPTER_ADDRESS,
+    autoDistributor,
     ZERO_ADDRESS,
     DEAD_ADDRESS,
   ]);
   const transferEvents = await updateTransferCache({
     client: publicClient,
-    rpcUrl,
+    rpcUrl: transferRpcUrl,
     token: projectToken,
     launchBlock,
     toBlock: indexedBlockNumber,
@@ -243,9 +376,29 @@ async function publishOneEpoch() {
   const distribution = buildDistribution(weightSnapshot.weights, newReward, previous);
   const nextEpoch = state.latestEpoch + 1;
   const newCumulativeAllocated = onchainAllocated + newReward;
+  const payoutEntries: AutoPayoutEntry[] = distribution.entries
+    .filter((entry) => entry.epochReward > 0n)
+    .map((entry) => ({ account: getAddress(entry.account), amountRaw: entry.epochReward.toString() }));
+  const allocationHash = keccak256(toHex(JSON.stringify(payoutEntries)));
+  let publishedRoot = distribution.merkleRoot as Hex;
+  let distributorCumulativeClaim: bigint | undefined;
+  if (autoDistributor) {
+    const alreadyClaimed = await publicClient.readContract({
+      address: rewardVault,
+      abi: rewardVaultAbi,
+      functionName: "claimed",
+      args: [autoDistributor],
+    });
+    distributorCumulativeClaim = alreadyClaimed + newReward;
+    publishedRoot = StandardMerkleTree.of<[string, string]>(
+      [[autoDistributor, distributorCumulativeClaim.toString()]],
+      ["address", "uint256"]
+    ).root as Hex;
+  }
   const snapshotPath = join(publicSnapshotDir, `epoch-${nextEpoch}.json`);
   const snapshot = {
     status: "prepared",
+    mode: autoDistributor ? "automatic" : "claim",
     chainId: 4663,
     epoch: nextEpoch,
     projectToken,
@@ -258,7 +411,15 @@ async function publishOneEpoch() {
     mstrRewardRaw: newReward.toString(),
     cumulativeAllocatedRaw: newCumulativeAllocated.toString(),
     totalWeight: distribution.totalWeight.toString(),
-    merkleRoot: distribution.merkleRoot,
+    merkleRoot: publishedRoot,
+    allocationMerkleRoot: distribution.merkleRoot,
+    allocationHash,
+    ...(autoDistributor && distributorCumulativeClaim !== undefined ? {
+      distributor: autoDistributor,
+      distributorCumulativeClaimRaw: distributorCumulativeClaim.toString(),
+      payoutEntries,
+      batchSize: autoBatchSize,
+    } : {}),
     entries: distribution.entries.map((entry) => ({
       account: entry.account,
       weight: entry.weight.toString(),
@@ -275,7 +436,7 @@ async function publishOneEpoch() {
     address: rewardVault,
     abi: rewardVaultAbi,
     functionName: "publishDistribution",
-    args: [BigInt(nextEpoch), distribution.merkleRoot as Hex, newCumulativeAllocated],
+    args: [BigInt(nextEpoch), publishedRoot, newCumulativeAllocated],
   });
   const hash = await walletClient.writeContract(request);
   await publicClient.waitForTransactionReceipt({ hash });
@@ -286,10 +447,19 @@ async function publishOneEpoch() {
     console.error(`Reward publisher reimbursement failed for ${hash}`, error);
   }
 
-  await atomicJson(snapshotPath, { ...snapshot, status: "published", transactionHash: hash });
+  const publishedSnapshot = { ...snapshot, status: "published", transactionHash: hash };
+  await atomicJson(snapshotPath, publishedSnapshot);
+  if (autoDistributor) {
+    await settleAutomaticPayout(publishedSnapshot as AutomaticSnapshot);
+  }
+  const completedSnapshot = {
+    ...publishedSnapshot,
+    status: autoDistributor ? "airdropped" : "published",
+  };
+  await atomicJson(snapshotPath, completedSnapshot);
   await atomicJson(join(publicSnapshotDir, "latest.json"), {
     ...snapshot,
-    status: "published",
+    status: completedSnapshot.status,
     transactionHash: hash,
   });
   await updatePublicHistory({
@@ -297,8 +467,10 @@ async function publishOneEpoch() {
     windowStart: state.lastWindowEnd,
     windowEnd,
     mstrRewardRaw: newReward.toString(),
-    merkleRoot: distribution.merkleRoot as Hex,
+    merkleRoot: publishedRoot,
     transactionHash: hash,
+    mode: autoDistributor ? "automatic" : "claim",
+    distributor: autoDistributor,
   });
   await atomicJson(statePath, {
     latestEpoch: nextEpoch,

@@ -9,11 +9,11 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { nonceManager, privateKeyToAccount } from "viem/accounts";
 import { bestQuote, quoteMstrRoutes } from "../automation/mstrQuotes";
 import { reimburseGas } from "./reimburse";
 import { writeHeartbeat } from "./heartbeat";
-import { rpcTransport } from "../shared/rpc";
+import { rpcTransport, transactionRpcTransport } from "../shared/rpc";
 
 const collectorAbi = parseAbi([
   "function feeEscrow() view returns (address)",
@@ -51,14 +51,18 @@ const chain = defineChain({
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [process.env.ROBINHOOD_RPC_URL || network.rpcUrl] } },
 });
-const account = privateKeyToAccount(required("KEEPER_PRIVATE_KEY") as Hex);
+const account = privateKeyToAccount(required("KEEPER_PRIVATE_KEY") as Hex, { nonceManager });
 const expectedAutomation = getAddress(required("AUTOMATION_ADDRESS"));
 if (getAddress(account.address) !== expectedAutomation) {
   throw new Error("KEEPER_PRIVATE_KEY_DOES_NOT_MATCH_AUTOMATION_ADDRESS");
 }
 const transport = rpcTransport(chain.rpcUrls.default.http[0], process.env.ROBINHOOD_RPC_FALLBACK_URL);
 const publicClient = createPublicClient({ chain, transport });
-const walletClient = createWalletClient({ chain, transport, account });
+const walletClient = createWalletClient({
+  chain,
+  transport: transactionRpcTransport(chain.rpcUrls.default.http[0]),
+  account,
+});
 const collector = required("PONS_FEE_COLLECTOR_ADDRESS") as Address;
 const feeRouter = required("FEE_ROUTER_ADDRESS") as Address;
 const projectToken = required("PROJECT_TOKEN_ADDRESS") as Address;

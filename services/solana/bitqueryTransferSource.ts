@@ -1,6 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import type { BitqueryBearerTokenSource } from "./bitqueryAuth";
 import type { DiscoveredTransferTransaction, MintTransferSource } from "./holderJournal";
+import { acknowledgeFinalizedBlockBackfill, discoverFinalizedBlockTransfers } from "./finalizedBlockBackfill";
 
 interface BitqueryRow {
   Block?: { Slot?: string | number };
@@ -124,5 +125,13 @@ export class BitqueryTransferSource implements MintTransferSource {
       }
     }
     return rows.sort((a, b) => a.slot - b.slot || a.transactionIndex - b.transactionIndex || a.signature.localeCompare(b.signature));
+  }
+
+  discoverFinalizedBlocks(args: Parameters<typeof discoverFinalizedBlockTransfers>[0]) {
+    return discoverFinalizedBlockTransfers(args);
+  }
+
+  acknowledgeFinalizedBlocks(args: Parameters<typeof acknowledgeFinalizedBlockBackfill>[0]) {
+    return acknowledgeFinalizedBlockBackfill(args);
   }
 }

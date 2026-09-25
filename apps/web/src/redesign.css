@@ -14,6 +14,11 @@ a, button { transition: color .18s ease, background .18s ease, border-color .18s
 .topbar nav a { color: #d6d5d1; font-family: inherit; font-size: 10px; letter-spacing: .05em; }
 .topbar-social { padding: 8px; border: 0; color: #e9e8e3; }
 .topbar-action .topbar-return { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
+.topbar-action .public-wallet-button.wallet-adapter-button { min-height: 44px; height: 44px; max-width: 220px; padding: 0 16px; border-radius: 0; color: #050505; background: var(--orange); font: 700 10px "Space Grotesk",sans-serif; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.topbar-action .public-wallet-button.wallet-adapter-button:not([disabled]):hover { color: #050505; background: #ff8a32; }
+.topbar-action .public-wallet-button.wallet-adapter-button:not([disabled]):focus-visible { outline: 2px solid #ffb06f; outline-offset: 4px; }
+.topbar-action .public-wallet-button .wallet-adapter-button-start-icon { width: 18px; height: 18px; margin-right: 8px; }
+.topbar-action .public-wallet-button .wallet-adapter-button-start-icon img { width: 18px; height: 18px; }
 .story-hero { position: relative; display: flex; flex-direction: column; min-height: 0; color: var(--warm); background: #030303; isolation: isolate; }
 .hero-copy { position: relative; z-index: 2; align-self: stretch; min-height: clamp(760px,58vw,900px); padding: 66px 6% 54px; }
 .hero-brand-title { position: relative; width: max-content; max-width: 100%; margin: 0 0 28px; font: 400 clamp(100px,14vw,210px)/.94 var(--display); letter-spacing: -.01em; text-shadow: 0 3px 30px #0005; }
@@ -112,6 +117,39 @@ a, button { transition: color .18s ease, background .18s ease, border-color .18s
 .documentation-body p, .documentation-body li { color: #bdb7ae; }
 .governance-connect, .share-vote-row button { color: #050505; background: var(--orange); }
 .option-grid button:hover:not(:disabled), .winning-option { background: #2a170d !important; }
+.governance-notice { max-width: 860px; padding: 19px 22px; border: 1px solid #714021; color: #e3b895; background: #170d07; font-size: 13px; line-height: 1.55; }
+.governance-page-panel .proposal-summary { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.governance-page-panel .proposal-summary > div { min-width: 0; border-bottom: 1px solid var(--line); }
+.governance-page-panel .proposal-summary small { color: #9d9993; font: 11px/1.45 var(--mono); overflow-wrap: anywhere; }
+.governance-page-panel .proposal-summary b { overflow-wrap: anywhere; }
+.governance-evidence { display: flex; flex-wrap: wrap; gap: 9px; margin: 20px 0 26px; }
+.governance-evidence a, .governance-wallet-state a { color: #ff9045; font: 11px/1.5 var(--mono); }
+.governance-evidence a { padding: 9px 11px; border: 1px solid #674127; text-decoration: none; }
+.governance-authority { color: #9d9993; font: 11px/1.5 var(--mono); }
+.governance-authority code { overflow-wrap: anywhere; color: #ff9045; }
+.governance-authority a { color: #ff9045; }
+.governance-page-panel .option-grid button { grid-template-rows: auto auto auto; gap: 4px; }
+.governance-page-panel .option-grid button:disabled { cursor: not-allowed; opacity: .78; }
+.governance-page-panel .option-grid button strong { grid-column: 2; margin-top: 12px; color: #ff8b3a; font: 11px var(--mono); }
+.governance-page-panel .option-grid .governance-option-selected { background: #301706; outline: 2px solid var(--orange); outline-offset: -2px; }
+.governance-wallet-state { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 28px; padding: 22px; border: 1px solid var(--line); }
+.governance-wallet-state p { margin: 0; color: #d1cbc2; line-height: 1.55; overflow-wrap: anywhere; }
+.governance-wallet-state small { color: #9c968f; line-height: 1.5; }
+.governance-wallet-state .governance-error { color: #ffae7c; }
+.governance-wallet-state .governance-submit { min-height: 44px; padding: 12px 18px; border: 0; color: #050505; background: var(--orange); font: 700 11px "Space Grotesk",sans-serif; text-transform: uppercase; letter-spacing: .08em; }
+.governance-wallet-state .governance-submit:disabled { color: #aca9a4; background: #28221d; cursor: not-allowed; }
+.governance-wallet-state .governance-connect.wallet-adapter-button { border-radius: 0; color: #050505; background: var(--orange); }
+.wallet-adapter-modal-overlay { background: #000b; }
+.wallet-adapter-modal-wrapper { max-width: 440px; border: 1px solid #563018; border-radius: 0; background: #0a0908; box-shadow: 0 24px 90px #000c; font-family: "Space Grotesk",sans-serif; }
+.wallet-adapter-modal-title { color: #f3f1eb; font-family: "Space Grotesk",sans-serif; }
+.wallet-adapter-modal-button-close { background: #25170e; }
+.wallet-adapter-modal-button-close svg { fill: #ff8a32; }
+.wallet-adapter-modal-list .wallet-adapter-button { color: #f3f1eb; background: transparent; }
+.wallet-adapter-modal-list .wallet-adapter-button:hover { color: #ff9147; background: #261207; }
+.wallet-adapter-modal-middle-button { border-radius: 0; color: #050505; background: var(--orange); font: 700 14px "Space Grotesk",sans-serif; }
+.wallet-adapter-modal-middle-button:hover { background: #ff8a32; }
+@media (max-width: 900px) { .governance-page-panel .proposal-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 700px) { .governance-page-panel .proposal-summary { grid-template-columns: 1fr; } .governance-page-panel .option-grid button strong { grid-column: 2; } .governance-evidence a { flex: 1 1 42%; } .wallet-adapter-modal-title { padding: 64px 22px 30px; font-size: 21px; line-height: 1.3; } .wallet-adapter-modal-list .wallet-adapter-button { font-size: 15px; } .topbar-action .public-wallet-button.wallet-adapter-button { overflow: hidden; text-overflow: ellipsis; } }
 @media (min-width: 1600px) { .hero-copy { padding-left: 4%; } .hero-symbol { max-width: 1800px; right: calc((100% - min(100%,1800px))/2); } }
 @media (max-width: 1150px) {
   .topbar { gap: 14px; }
@@ -137,6 +175,8 @@ a, button { transition: color .18s ease, background .18s ease, border-color .18s
   .topbar > .topbar-social { display: none; }
   .topbar-action { margin-left: auto; }
   .topbar-action .topbar-return { min-height: 36px; padding: 10px; font-size: 9px; }
+  .topbar-action .public-wallet-button.wallet-adapter-button { min-height: 36px; height: 36px; max-width: 145px; padding: 0 10px; font-size: 9px; }
+  .topbar-action .public-wallet-button .wallet-adapter-button-start-icon { display: none; }
   .hero-copy { min-height: 700px; padding: 44px 20px 35px; display: flex; flex-direction: column; align-items: flex-start; }
   .hero-brand-title { font-size: clamp(67px,16vw,108px); margin-bottom: auto; line-height: .95; }
   .story-hero h1 { margin-top: 175px; margin-bottom: 12px; font-size: 23px; line-height: 1.3; }
