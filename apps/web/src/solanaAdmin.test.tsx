@@ -405,6 +405,7 @@ describe("private Solana governance readout", () => {
     expect(html).toContain("Проверить и включить детектор токена");
     expect(html).toContain('aria-label="Резерв под контролем владельца"');
     expect(html).toContain("КОШЕЛЁК РЕЗЕРВА");
+    expect(html).toContain("Событий пока нет");
     expect(html).not.toContain("Governance executor released");
     expect(html).not.toContain("Create initial ballot");
   });
