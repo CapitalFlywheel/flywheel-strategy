@@ -5,7 +5,7 @@ import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
 vi.mock("@solana/wallet-adapter-react", () => ({ useWallet: () => ({}) }));
-vi.mock("@solana/wallet-adapter-react-ui", () => ({ WalletMultiButton: () => null }));
+vi.mock("@solana/wallet-adapter-react-ui", () => ({ BaseWalletMultiButton: () => null }));
 
 import { adminReadinessLabel, governanceLifecycleReadout, governanceProposalStatusLabel, hasRecentVerifiedReserve, SolanaAdminPanel } from "./solanaAdmin";
 import { canCreateOwnerProposal, canExecuteOwnerBuyback, canExecuteOwnerMarketingSale, canExecuteOwnerMstrxLock,
@@ -402,9 +402,9 @@ describe("private Solana governance readout", () => {
   it("shows one-step token detection and owner-controlled reserve without inactive governance controls", () => {
     Object.defineProperty(globalThis, "window", { configurable: true, value: { __FLYWHEEL_ADMIN_API__: undefined } });
     const html = renderToStaticMarkup(createElement(SolanaAdminPanel));
-    expect(html).toContain("Check and arm token detection");
-    expect(html).toContain('aria-label="Owner-controlled strategic reserve"');
-    expect(html).toContain("RESERVE WALLET");
+    expect(html).toContain("Проверить и включить детектор токена");
+    expect(html).toContain('aria-label="Резерв под контролем владельца"');
+    expect(html).toContain("КОШЕЛЁК РЕЗЕРВА");
     expect(html).not.toContain("Governance executor released");
     expect(html).not.toContain("Create initial ballot");
   });

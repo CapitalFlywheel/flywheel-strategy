@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { BaseWalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import bs58 from "bs58";
 import { canCreateOwnerProposal, canExecuteOwnerBuyback, canExecuteOwnerMarketingSale,
   canExecuteOwnerMstrxLock, canFinalizeOwnerVote, canPublishOwnerSnapshot, canRequestOwnerLockRelease,
@@ -83,32 +83,59 @@ function savePendingAction(value: PendingAction | undefined) {
 // Binding reserve voting is not part of this owner-wallet launch route.
 const optionalGovernanceEnabled = false;
 
+const walletLabels = {
+  "change-wallet": "Сменить кошелёк",
+  connecting: "Подключение…",
+  "copy-address": "Скопировать адрес",
+  copied: "Скопировано",
+  disconnect: "Отключить",
+  "has-wallet": "Подключить",
+  "no-wallet": "Выбрать кошелёк",
+};
+
+const serviceLabels: Record<string, string> = {
+  "solana-launch-detector": "Детектор токена",
+  "solana-fee-keeper": "Сбор и распределение комиссий",
+  "solana-distributor": "Рассылка наград",
+  "solana-owed-reward-retry": "Повторная отправка наград",
+  "solana-public-snapshot": "Публичные данные",
+};
+
+function actionLabel(action: string) {
+  for (const group of actionGroups) {
+    for (const [key, label] of group.actions) {
+      if (key === action) return label;
+    }
+  }
+  return action;
+}
+
 const actionGroups = [
   {
-    title: "Launch control",
+    title: "Запуск токена",
     actions: [
-      ["arm_launch_detection", "Check and arm token detection", "One owner signature checks the setup, then watches the creator wallet and activates the verified token automatically"],
-      ["disarm_launch_detection", "Disarm detection", "Stops launch discovery without changing any balances"],
-      ["activate_postlaunch", "Retry verified activation", "Re-runs the same two-RPC Pump create-event detection and validation if automatic activation was interrupted"],
+      ["arm_launch_detection", "Проверить и включить детектор токена", "Одна подпись владельца проверяет настройки · После создания токена детектор найдёт его и включит автоматизацию"],
+      ["disarm_launch_detection", "Выключить детектор", "Останавливает поиск токена, не меняя балансы"],
+      ["activate_postlaunch", "Повторить активацию", "Проверяет создание токена через два RPC и повторяет активацию, если она прервалась"],
     ],
   },
   {
-    title: "Fee custody",
+    title: "Комиссии",
     actions: [
-      ["sweep_curve_fees", "Route bonding-curve fees", "Collects creator fees and allocates only the finalized MSTRx receipt delta 60/40"],
-      ["sweep_pumpswap_fees", "Route PumpSwap fees", "Collects post-graduation MSTRx creator fees and applies the same exact 60/40 split"],
-      ["pause_conversions", "Pause fee routing", "Stops new fee collections and routing · Already signed transactions may still finalize"],
-      ["reconcile_fee_receipts", "Reconcile pending fee transaction", "While paused, checks a previously signed collection or route without starting a new route"],
-      ["resume_conversions", "Resume fee routing", "Resumes only after configuration and RPC checks pass"],
-      ["recover_uncommitted", "Recover uncommitted MSTRx", "Moves only finalized collected receipts still unrouted in the creator wallet"],
+      ["sweep_curve_fees", "Собрать комиссии Pump", "Собирает полученные MSTRx и направляет 60% холдерам, 40% в резерв"],
+      ["sweep_pumpswap_fees", "Собрать комиссии PumpSwap", "После миграции применяет то же распределение 60/40"],
+      ["pause_conversions", "Приостановить сбор комиссий", "Останавливает новые операции · Уже отправленные транзакции могут завершиться"],
+      ["reconcile_fee_receipts", "Проверить незавершённую операцию", "Сверяет ранее отправленную транзакцию, не начиная новую"],
+      ["resume_conversions", "Возобновить сбор комиссий", "Возобновляет работу после проверки конфигурации и RPC"],
+      ["recover_uncommitted", "Вернуть нераспределённые MSTRx", "Возвращает только собранные MSTRx, ещё не отправленные холдерам или в резерв"],
     ],
   },
   {
-    title: "Rewards and reserve",
+    title: "Награды холдерам",
     actions: [
-      ["prepare_reward_epoch", "Prepare reward epoch", "Calculates holders and proves exact funded conservation"],
-      ["distribute_reward_epoch", "Distribute reward epoch", "Runs idempotent automatic MSTRx batches with no claim"],
-      ["finalize_reward_epoch", "Finalize reward epoch", "Closes only after every batch and raw MSTRx unit reconcile"],
+      ["prepare_reward_epoch", "Подготовить период наград", "Рассчитывает доли холдеров и сверяет доступные MSTRx"],
+      ["distribute_reward_epoch", "Разослать награды", "Отправляет MSTRx холдерам без клейма на сайте"],
+      ["finalize_reward_epoch", "Закрыть период наград", "Закрывает период только после сверки всех отправок и баланса"],
     ],
   },
 ] as const;
@@ -167,14 +194,14 @@ export function governanceLifecycleReadout(status: SolanaAdminStatus | undefined
 }
 
 function short(value?: string) {
-  return value ? `${value.slice(0, 5)}…${value.slice(-5)}` : "NOT SET";
+  return value ? `${value.slice(0, 5)}…${value.slice(-5)}` : "НЕ УКАЗАН";
 }
 
 export function SolanaAdminPanel() {
   const wallet = useWallet();
   const [status, setStatus] = useState<SolanaAdminStatus>();
   const [busy, setBusy] = useState<string>();
-  const [notice, setNotice] = useState("Connect the configured owner wallet to authorize an action");
+  const [notice, setNotice] = useState("Подключи кошелёк владельца, чтобы подписывать действия");
   const [pendingAction, setPendingAction] = useState<PendingAction | undefined>(storedPendingAction);
   const [withdrawAmountRaw, setWithdrawAmountRaw] = useState("");
   const [releaseProposalId, setReleaseProposalId] = useState("");
@@ -211,8 +238,8 @@ export function SolanaAdminPanel() {
   }, [apiRoot]);
 
   useEffect(() => {
-    void refresh().catch(() => setNotice("Solana control API is not configured on this environment"));
-    const timer = window.setInterval(() => void refresh().catch(() => setNotice("Live control status unavailable · Actions locked until it reconnects")), 30_000);
+    void refresh().catch(() => setNotice("Сервис управления Solana недоступен"));
+    const timer = window.setInterval(() => void refresh().catch(() => setNotice("Нет связи с сервисом управления · Действия заблокированы до восстановления связи")), 30_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 
@@ -226,17 +253,17 @@ export function SolanaAdminPanel() {
         const outcome = await response.json() as ActionOutcome;
         if (cancelled || outcome.requestId !== pendingAction.requestId) return;
         if (outcome.state === "queued") {
-          setNotice(`Queued ${pendingAction.action} · ${pendingAction.requestId} · Waiting for server result`);
+          setNotice(`В очереди: ${actionLabel(pendingAction.action)} · ${pendingAction.requestId} · Ждём ответ сервера`);
           return;
         }
         savePendingAction(undefined);
         setPendingAction(undefined);
         setNotice(outcome.state === "processed"
-          ? `Processed ${pendingAction.action} · ${pendingAction.requestId} · Check live state; onchain transactions may still be pending`
-          : `Failed ${pendingAction.action} · ${pendingAction.requestId} · Inspect live state and pending transactions before retrying`);
+          ? `Обработано: ${actionLabel(pendingAction.action)} · ${pendingAction.requestId} · Проверь статус: транзакция ещё может подтверждаться`
+          : `Ошибка: ${actionLabel(pendingAction.action)} · ${pendingAction.requestId} · Проверь статус и транзакции перед повтором`);
         void refresh().catch(() => undefined);
       } catch {
-        if (!cancelled) setNotice(`Waiting to verify ${pendingAction.action} · ${pendingAction.requestId} · Do not resubmit yet`);
+        if (!cancelled) setNotice(`Проверяем: ${actionLabel(pendingAction.action)} · ${pendingAction.requestId} · Пока не отправляй повторно`);
       }
     };
     void poll();
@@ -283,7 +310,7 @@ export function SolanaAdminPanel() {
       return;
     }
     setBusy(action);
-    setNotice("Preparing exact action challenge");
+    setNotice("Готовим точный запрос на подпись");
     try {
       if (!apiRoot) throw new Error("ADMIN_API_UNAVAILABLE");
       const challengeResponse = await fetch(`${apiRoot}/solana/challenge`, {
@@ -335,10 +362,10 @@ export function SolanaAdminPanel() {
       savePendingAction(pending);
       setPendingAction(pending);
       if (isProposalCreation || action === "publish_snapshot") clearProposalPreview();
-      setNotice(`Queued ${action} · ${result.requestId} · Waiting for server result`);
+      setNotice(`В очереди: ${actionLabel(action)} · ${result.requestId} · Ждём ответ сервера`);
       await refresh();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "ACTION_FAILED");
+      setNotice(`Действие не выполнено · ${error instanceof Error ? error.message : "Неизвестная ошибка"}`);
     } finally {
       setBusy(undefined);
     }
@@ -397,31 +424,37 @@ export function SolanaAdminPanel() {
     && BigInt(withdrawAmountRaw || "0") <= BigInt(governance?.freeRaw ?? "0");
   const proposedFrozen = ownerActions.find((action) => action.key === proposalMode)?.exactRaw;
   const proposalCreateReady = canCreateOwnerProposal(status, proposalPreview, proposalPreviewRequest, now);
+  const automationStateLabel = !executionReleased ? "ДЕЙСТВИЯ НЕДОСТУПНЫ"
+    : status?.automationState === "running" ? "РАБОТАЕТ"
+      : status?.automationState === "stopped" ? "ОСТАНОВЛЕНО" : "СТАТУС НЕИЗВЕСТЕН";
+  const readinessLabel = {
+    LIVE: "РАБОТАЕТ", CONFIGURED: "НАСТРОЕНО", BLOCKED: "НЕ ГОТОВО",
+  }[adminReadinessLabel(status)];
   return <main className="admin-shell">
     <header className="admin-topbar">
-      <a className="admin-brand" href="/"><span>FS</span><b>FLYWHEEL STRATEGY · SOLANA CONTROL</b></a>
-      <div className={`admin-system-state is-${executionReleased ? status?.automationState ?? "unknown" : "stopped"}`}><i />{executionReleased ? status?.automationState?.toUpperCase() ?? "UNKNOWN" : "EXECUTION BLOCKED"}</div>
-      <WalletMultiButton className="admin-wallet-button" />
+      <a className="admin-brand" href="/"><span>FS</span><b>FLYWHEEL STRATEGY · УПРАВЛЕНИЕ SOLANA</b></a>
+      <div className={`admin-system-state is-${executionReleased ? status?.automationState ?? "unknown" : "stopped"}`}><i />{automationStateLabel}</div>
+      <BaseWalletMultiButton className="admin-wallet-button" labels={walletLabels} />
     </header>
 
     <section className="admin-heading">
-      <div><span className="admin-kicker">PRIVATE OWNER PANEL</span><h1>SOLANA OPERATIONS</h1><p>One explicit authorization per action · No arbitrary transactions · 60% holders · 40% reserve</p></div>
-      <div className={`admin-owner-card ${authorized ? "confirmed" : ""}`}><span>{authorized ? "OWNER VERIFIED" : "OWNER NOT VERIFIED"}</span><b>{short(status?.owner)}</b><small>{wallet.publicKey ? short(wallet.publicKey.toBase58()) : "Connect the owner wallet"}</small></div>
+      <div><span className="admin-kicker">ЗАКРЫТАЯ ПАНЕЛЬ ВЛАДЕЛЬЦА</span><h1>УПРАВЛЕНИЕ ПРОЕКТОМ</h1><p>Отдельная подпись для каждого действия · 60% холдерам · 40% в резерв</p></div>
+      <div className={`admin-owner-card ${authorized ? "confirmed" : ""}`}><span>{authorized ? "КОШЕЛЁК ВЛАДЕЛЬЦА ПОДКЛЮЧЕН" : "КОШЕЛЁК ВЛАДЕЛЬЦА НЕ ПОДКЛЮЧЕН"}</span><b>{short(status?.owner)}</b><small>{wallet.publicKey ? short(wallet.publicKey.toBase58()) : "Подключи кошелёк владельца"}</small></div>
     </section>
 
     <section className="admin-grid">
       <article className="admin-primary-card">
-        <div className="admin-card-head"><div><span>LIVE CONTROL STATE</span><h2>Launch and automation</h2></div><b className={executionReleased && status?.launch.activated ? "green" : "amber"}>{!executionReleased ? "EXECUTION BLOCKED" : status?.launch.activated ? "ACTIVE" : "NOT ACTIVE"}</b></div>
-        <div className="admin-services">{services.length ? services.map(([name, service]) => <div key={name}><i className={service.ok ? "online" : "offline"} /><span><b>{name}</b><small>{service.updatedAt ? new Date(service.updatedAt).toLocaleString() : "No heartbeat"}</small></span></div>) : <div><i className="offline" /><span><b>Services not started</b><small>Production credentials are not installed</small></span></div>}</div>
+        <div className="admin-card-head"><div><span>ТЕКУЩЕЕ СОСТОЯНИЕ</span><h2>Запуск и автоматизация</h2></div><b className={executionReleased && status?.launch.activated ? "green" : "amber"}>{!executionReleased ? "ДЕЙСТВИЯ НЕДОСТУПНЫ" : status?.launch.activated ? "АКТИВНО" : "НЕ АКТИВНО"}</b></div>
+        <div className="admin-services">{services.length ? services.map(([name, service]) => <div key={name}><i className={service.ok ? "online" : "offline"} /><span><b>{serviceLabels[name] ?? name}</b><small>{service.updatedAt ? new Date(service.updatedAt).toLocaleString("ru-RU") : "Нет данных о работе"}</small></span></div>) : <div><i className="offline" /><span><b>Сервисы ещё не запущены</b><small>Данные о работе появятся после запуска</small></span></div>}</div>
         <p className="admin-note">{notice}</p>
       </article>
-      <aside className="admin-health-card"><span>READINESS</span><strong>{adminReadinessLabel(status)}</strong><ul><li className={status?.launch.configured ? "done" : ""}>Launch configuration</li><li className={status?.owner ? "done" : ""}>Owner public key</li><li className={status?.launch.armed ? "done" : ""}>Automatic detector armed</li><li className={status?.launch.detectedMint ? "done" : ""}>Detected Pump.fun mint</li><li className={status?.launch.activated ? "done" : ""}>Automatic activation</li></ul><small>Updated {status?.updatedAt ? new Date(status.updatedAt).toLocaleString() : "never"}</small></aside>
+      <aside className="admin-health-card"><span>ГОТОВНОСТЬ</span><strong>{readinessLabel}</strong><ul><li className={status?.launch.configured ? "done" : ""}>Конфигурация запуска</li><li className={status?.owner ? "done" : ""}>Адрес владельца</li><li className={status?.launch.armed ? "done" : ""}>Детектор включён</li><li className={status?.launch.detectedMint ? "done" : ""}>Токен Pump.fun найден</li><li className={status?.launch.activated ? "done" : ""}>Автоматизация включена</li></ul><small>Обновлено: {status?.updatedAt ? new Date(status.updatedAt).toLocaleString("ru-RU") : "ещё не обновлялось"}</small></aside>
     </section>
 
-    <section className="admin-launch-flow" aria-label="Owner-controlled strategic reserve">
-      <div className="admin-card-head"><div><span>RESERVE CUSTODY</span><h2>Strategic reserve</h2></div><b className="green">OWNER-CONTROLLED WALLET</b></div>
-      <p className="admin-note">40% of collected MSTRx creator fees route to the separate reserve wallet · Its owner controls the funds directly</p>
-      <div className="admin-addresses"><div><span>RESERVE WALLET</span><b>{status?.reserveWallet ?? "NOT SET"}</b></div><div><span>RESERVE MSTRx RAW</span><b>{status?.balances.reserveMstrxRaw ?? "0"}</b></div></div>
+    <section className="admin-launch-flow" aria-label="Резерв под контролем владельца">
+      <div className="admin-card-head"><div><span>СРЕДСТВА РЕЗЕРВА</span><h2>Стратегический резерв</h2></div><b className="green">КОШЕЛЁК ПОД ТВОИМ КОНТРОЛЕМ</b></div>
+      <p className="admin-note">40% полученных комиссий в MSTRx поступают на отдельный кошелёк резерва · Распоряжается ими владелец этого кошелька</p>
+      <div className="admin-addresses"><div><span>КОШЕЛЁК РЕЗЕРВА</span><b>{status?.reserveWallet ?? "НЕ УКАЗАН"}</b></div><div><span>MSTRx В РЕЗЕРВЕ · RAW</span><b>{status?.balances.reserveMstrxRaw ?? "0"}</b></div></div>
     </section>
 
     {optionalGovernanceEnabled && <>
@@ -654,16 +687,16 @@ export function SolanaAdminPanel() {
     </>}
 
     {actionGroups.map((group) => <section className="admin-launch-flow" key={group.title}>
-      <div className="admin-card-head"><div><span>EXPLICIT ACTIONS</span><h2>{group.title}</h2></div><b>{!executionReleased ? "EXECUTOR NOT RELEASED" : authorized ? "OWNER READY" : "LOCKED"}</b></div>
-      <div className="solana-action-grid">{group.actions.map(([action, label, detail]) => <article key={action}><div><b>{label}</b><small>{detail}</small></div><button disabled={!authorized || Boolean(busy) || Boolean(pendingAction) || (!executionReleased && ["arm_launch_detection", "activate_postlaunch"].includes(action))} onClick={() => void runAction(action)}>{busy === action ? "SIGNING…" : "AUTHORIZE"}</button></article>)}</div>
+      <div className="admin-card-head"><div><span>ДЕЙСТВИЯ ВЛАДЕЛЬЦА</span><h2>{group.title}</h2></div><b>{!executionReleased ? "НЕДОСТУПНО" : authorized ? "МОЖНО ПОДПИСЫВАТЬ" : "ПОДКЛЮЧИ КОШЕЛЁК"}</b></div>
+      <div className="solana-action-grid">{group.actions.map(([action, label, detail]) => <article key={action}><div><b>{label}</b><small>{detail}</small></div><button disabled={!authorized || Boolean(busy) || Boolean(pendingAction) || (!executionReleased && ["arm_launch_detection", "activate_postlaunch"].includes(action))} onClick={() => void runAction(action)}>{busy === action ? "ПОДПИСЫВАЕМ…" : "ПОДПИСАТЬ"}</button></article>)}</div>
     </section>)}
 
     <section className="admin-addresses">
-      <div><span>OWNER</span><b>{status?.owner ?? "NOT SET"}</b></div>
-      <div><span>DETECTED MINT</span><b>{status?.launch.detectedMint ?? "NOT DETECTED"}</b></div>
-      <div><span>CREATOR MSTRx RAW</span><b>{status?.balances.creatorMstrxRaw ?? "0"}</b></div>
-      <div><span>HOLDER MSTRx RAW</span><b>{status?.balances.holderMstrxRaw ?? "0"}</b></div>
-      <div><span>RESERVE MSTRx RAW</span><b>{status?.balances.reserveMstrxRaw ?? "0"}</b></div>
+      <div><span>ВЛАДЕЛЕЦ</span><b>{status?.owner ?? "НЕ УКАЗАН"}</b></div>
+      <div><span>АДРЕС НАЙДЕННОГО ТОКЕНА</span><b>{status?.launch.detectedMint ?? "ЕЩЁ НЕ НАЙДЕН"}</b></div>
+      <div><span>MSTRx У СОЗДАТЕЛЯ · RAW</span><b>{status?.balances.creatorMstrxRaw ?? "0"}</b></div>
+      <div><span>MSTRx ДЛЯ ХОЛДЕРОВ · RAW</span><b>{status?.balances.holderMstrxRaw ?? "0"}</b></div>
+      <div><span>MSTRx В РЕЗЕРВЕ · RAW</span><b>{status?.balances.reserveMstrxRaw ?? "0"}</b></div>
     </section>
   </main>;
 }

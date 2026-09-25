@@ -4,6 +4,8 @@
 
 The private panel is served only at the unlisted path configured by `ADMIN_PANEL_PATH`. The public `/admin` route is unavailable. The unlisted path is not authentication: every operation requires a fresh Ed25519 signature by `SOLANA_ADMIN_OWNER`
 
+The isolated test panel is reachable from the main HTTPS domain through an exact reverse-proxy route to the staging web service. The path and its API are not linked from public pages; public website routes remain on the production web service. A local SSH tunnel remains available as an operational fallback, not the normal owner workflow. Never commit the actual panel path or weaken the owner-signature check
+
 The owner, Pump creator and creator-fee recovery address are the same wallet in the approved single-wallet setup. Its protected server keypair lets the service collect creator fees automatically; a compromised server could therefore control that wallet. The user retains the wallet and signs panel actions directly. The panel never accepts arbitrary transaction instructions or destinations
 
 ## One-signature launch flow

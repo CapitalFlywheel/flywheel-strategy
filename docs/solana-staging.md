@@ -6,7 +6,7 @@ This is an isolated **mainnet canary**, not the production FLYWHEEL launch. Use 
 
 - Checkout: `/opt/mstr-system-staging`, never `/opt/mstr-system`
 - Docker Compose project: `mstr-system-staging`, with a distinct image tag
-- HTTP: `127.0.0.1:8788` on the server, accessed only by an SSH tunnel
+- HTTP preview: `127.0.0.1:8788` on the server, accessed by an SSH tunnel; only the exact hidden admin route and its API are also proxied through the main HTTPS domain
 - State: `/opt/mstr-system-staging/data`, never production `data`
 - Protected environment: `.env.solana` inside the staging checkout, mode `0600`; do not copy production `.env.server` or any wallet key into staging
 - Financial services have the `staging-automation` profile and remain stopped until the complete governance executor, reviewed vault program, test wallets, two independent RPCs, transfer history and launch plan are ready
