@@ -43,7 +43,7 @@ describe("Solana runner singleton wiring", () => {
     expect(dockerfile).toContain("RUN apk add --no-cache flock");
     expect(script).toContain('lock_root="$state_root/.locks"');
     expect(script).toContain("flock -E 75 -x -w 15 9");
-    expect(script).toContain("exec flock -F -n 9 node --import tsx");
+    expect(script).toContain('exec node --import tsx "$entry"');
     expect(script).toContain('export SOLANA_SINGLETON_GUARD="$service"');
     expect(control).toContain('assertSolanaRunnerSingleton("control-runner")');
     expect(indexer).toContain('assertSolanaRunnerSingleton("holder-indexer")');

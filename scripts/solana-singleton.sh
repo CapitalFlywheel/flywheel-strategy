@@ -61,6 +61,6 @@ done
 echo "SOLANA_SINGLETON_ACQUIRED:$service" >&2
 export SOLANA_SINGLETON_GUARD="$service"
 if [ "$1" = test-probe ]; then
-  exec flock -F -n 9 node -e 'setTimeout(() => {}, Number(process.env.SOLANA_SINGLETON_PROBE_MS || "1000"))'
+  exec node -e 'setTimeout(() => {}, Number(process.env.SOLANA_SINGLETON_PROBE_MS || "1000"))'
 fi
-exec flock -F -n 9 node --import tsx "$entry"
+exec node --import tsx "$entry"
