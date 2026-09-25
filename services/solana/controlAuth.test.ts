@@ -266,7 +266,7 @@ describe("signed Solana control requests", () => {
         launch: { configured: false, armed: false, activated: false },
         services: {}, balances: {}, conversionsPaused: false, updatedAt: 0 };
       await expect(dispatch({ ...signed, id: "3-cccccccccccccccc", requestedAt: now }, status))
-        .rejects.toThrow("RESERVE_WITHDRAWAL_NOT_RELEASED");
+        .rejects.toThrow("GOVERNANCE_EXECUTION_NOT_RELEASED");
       await expect(readFile(join(temporary, "solana", "control-nonces", `${signed.nonce}.json`), "utf8"))
         .rejects.toMatchObject({ code: "ENOENT" });
     });
