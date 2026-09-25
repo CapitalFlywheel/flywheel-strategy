@@ -232,16 +232,15 @@ export async function assessSolanaTestReadiness(
   const recovery = publicKey(env.SOLANA_RECOVERY_PUBLIC_KEY);
   const operator = publicKey(env.SOLANA_OPERATOR_PUBLIC_KEY);
   const holder = publicKey(env.SOLANA_HOLDER_SETTLEMENT_PUBLIC_KEY);
-  const marketing = publicKey(env.SOLANA_MARKETING_PUBLIC_KEY);
   const production = publicKey(env.SOLANA_PRODUCTION_DEPLOYER_PUBLIC_KEY);
   const expectedTest = new PublicKey(EXPECTED_TEST_CREATOR);
   const testRoles = env.SOLANA_SHARED_ADMIN_CREATOR === "true"
     && !!owner?.equals(expectedTest) && !!creator?.equals(expectedTest) && !!recovery?.equals(expectedTest)
-    && !!operator && !!holder && !!marketing
+    && !!operator && !!holder
     && !operator.equals(expectedTest) && !holder.equals(expectedTest)
-    && !operator.equals(holder) && !operator.equals(marketing) && !holder.equals(marketing);
+    && !operator.equals(holder);
   add("disposable-wallet-roles", testRoles, "TEST_WALLET_ROLES_INVALID");
-  const stagingRoles = [owner, creator, recovery, operator, holder, marketing];
+  const stagingRoles = [owner, creator, recovery, operator, holder];
   add("fresh-test-mint", !env.SOLANA_CAPITAL_MINT?.trim(), "TEST_MINT_ALREADY_CONFIGURED");
   add("official-reward-mint", env.SOLANA_MSTRX_MINT?.trim() === MSTRX_MINT, "MSTRX_MINT_MISSING_OR_MISMATCH");
 
