@@ -13,7 +13,7 @@
     "preflight:solana-web": "tsx scripts/solana-staging-web-readiness.ts",
     "test:legacy": "hardhat test",
     "test:indexer": "vitest run services --exclude outputs/**",
-    "test:web": "vitest run apps/web/src/wallets.test.ts apps/web/src/solanaWalletConnect.test.ts apps/web/src/governanceClient.test.ts apps/web/src/voteConfirmation.test.ts apps/web/src/solanaAdmin.test.tsx --exclude outputs/**",
+    "test:web": "vitest run apps/web/src/wallets.test.ts apps/web/src/solanaWalletConnect.test.ts apps/web/src/governanceClient.test.ts apps/web/src/voteConfirmation.test.ts apps/web/src/solanaAdmin.test.tsx apps/web/src/offchainGovernance.test.tsx --exclude outputs/**",
     "test:all": "npm run test && npm run test:indexer && npm run test:legacy",
     "test:fork": "cross-env ROBINHOOD_FORK=true RUN_FORK_TESTS=true hardhat test test/fork.mstr.test.js",
     "deploy:local": "hardhat run scripts/deploy-local.js",

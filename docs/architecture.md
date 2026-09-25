@@ -70,7 +70,7 @@ The owner may pause future routing and recover only collected but uncommitted MS
 
 Reserve inventory is held in a separate ordinary MSTRx token account owned by the user-controlled reserve wallet. The runner verifies that token account's mint and owner before routing its 40% share. No Solana reserve or governance program is deployed or required for launch
 
-The wallet owner can transfer reserve funds directly. This is not binding holder governance. The historical onchain governance prototype in this repository is not part of the active Solana product and its voting and execution routes remain disabled
+The wallet owner can transfer reserve funds directly. Holder voting uses a published balance-time snapshot and signed offchain choices, one per eligible wallet. The web service verifies signatures and stores receipts, while the runner publishes a snapshot after two-RPC finalized history checks. Votes are advisory: neither the ballot nor its outcome locks the owner wallet or executes a reserve action. The historical onchain governance prototype in this repository is not part of the active Solana product and its transaction routes remain disabled
 
 ## Control plane
 

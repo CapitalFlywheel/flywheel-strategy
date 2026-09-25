@@ -51,6 +51,9 @@ import { validateBuybackExecutionIntent, type BuybackExecutionIntent } from "../
 import { auditMarketingExecution } from "../solana/governanceMarketingExecutionControl";
 import { auditLockRelease, validateLockReleaseIntent,
   type LockReleaseIntent } from "../solana/governanceLockReleaseControl";
+import { OFFCHAIN_ACTIONS, offchainTally, recordOffchainVote, validateOffchainBallot,
+  verifiedOffchainSnapshot, voteWeight, type OffchainBallot, type SignedOffchainVote } from "../solana/offchainGovernance";
+import { validateOffchainBallotIntent, type OffchainBallotIntent } from "../solana/offchainBallotPublisher";
 
 const port = Number(process.env.PORT || "8787");
 const staticRoot = resolve(process.env.WEB_STATIC_ROOT || "dist/web");
@@ -103,7 +106,7 @@ const solanaChallenges = new Map<string, { action: string; message: string; issu
   withdrawal?: FreeReserveWithdrawalIntent; finalization?: FinalizeVoteIntent; proposalCreation?: ProposalControlIntent;
   snapshotPublication?: SnapshotPublicationIntent; lockExecution?: LockExecutionIntent;
   buybackExecution?: BuybackExecutionIntent; marketingExecution?: MarketingExecutionIntent;
-  lockRelease?: LockReleaseIntent }>();
+  lockRelease?: LockReleaseIntent; offchainBallot?: OffchainBallotIntent }>();
 const mimeTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -356,7 +359,7 @@ async function guardedSpendingAudit<T>(task: () => Promise<T>): Promise<T> {
 
 async function solanaAdminChallenge(action: string, amountRaw?: unknown,
   proposalRequest?: unknown, previewHash?: unknown, previewAuditedAtUnix?: unknown,
-  releaseProposalId?: unknown) {
+  releaseProposalId?: unknown, durationHours?: unknown) {
   if (!solanaAdminOwner || !SOLANA_CONTROL_ACTIONS.has(action)) return;
   cleanChallenges();
   if (!["create_proposal", "create_revote"].includes(action)
@@ -364,6 +367,9 @@ async function solanaAdminChallenge(action: string, amountRaw?: unknown,
     throw new Error("CONTROL_ACTION_PAYLOAD_INVALID");
   }
   if (action !== "release_lock_mstrx" && releaseProposalId !== undefined) {
+    throw new Error("CONTROL_ACTION_PAYLOAD_INVALID");
+  }
+  if (action !== "start_offchain_ballot" && durationHours !== undefined) {
     throw new Error("CONTROL_ACTION_PAYLOAD_INVALID");
   }
   let withdrawal: FreeReserveWithdrawalIntent | undefined;
@@ -374,6 +380,7 @@ async function solanaAdminChallenge(action: string, amountRaw?: unknown,
   let buybackExecution: BuybackExecutionIntent | undefined;
   let marketingExecution: MarketingExecutionIntent | undefined;
   let lockRelease: LockReleaseIntent | undefined;
+  let offchainBallot: OffchainBallotIntent | undefined;
   if (action === "withdraw_free_reserve") {
     if (!SOLANA_GOVERNANCE_RESERVE_WITHDRAWAL_RELEASED) throw new Error("RESERVE_WITHDRAWAL_NOT_RELEASED");
     if (typeof amountRaw !== "string" || !/^[1-9]\d{0,19}$/.test(amountRaw)) throw new Error("RESERVE_WITHDRAWAL_AMOUNT_INVALID");
@@ -647,6 +654,19 @@ async function solanaAdminChallenge(action: string, amountRaw?: unknown,
       capitalMint: snapshot.launch!.detectedMint!, admin: solanaAdminOwner,
     }, releaseProposalId));
     lockRelease = audited.intent;
+  } else if (action === "start_offchain_ballot") {
+    if (amountRaw !== undefined || !Number.isSafeInteger(durationHours)) throw new Error("OFFCHAIN_BALLOT_INTENT_INVALID");
+    const snapshot = JSON.parse(await readFile(resolve(controlDataRoot, "solana-status-visible", "solana-status.json"), "utf8")) as {
+      launch?: { activated?: boolean; detectedMint?: string }; reserveWallet?: string;
+      balances?: { reserveMstrxRaw?: string }; updatedAt?: number;
+    };
+    if (!snapshot.launch?.activated || !snapshot.launch.detectedMint || !snapshot.reserveWallet
+      || !snapshot.balances?.reserveMstrxRaw || !snapshot.updatedAt) throw new Error("OFFCHAIN_BALLOT_STATUS_UNAVAILABLE");
+    offchainBallot = validateOffchainBallotIntent({
+      id: String(Date.now()), capitalMint: snapshot.launch.detectedMint,
+      reserveWallet: snapshot.reserveWallet, reserveRawMstrx: snapshot.balances.reserveMstrxRaw,
+      durationHours, options: [...OFFCHAIN_ACTIONS], verifiedAt: snapshot.updatedAt,
+    });
   } else if (amountRaw !== undefined || proposalRequest !== undefined || previewHash !== undefined
     || previewAuditedAtUnix !== undefined) throw new Error("CONTROL_ACTION_PAYLOAD_INVALID");
   const id = randomBytes(20).toString("hex");
@@ -662,11 +682,11 @@ async function solanaAdminChallenge(action: string, amountRaw?: unknown,
   if (lockRelease) validateLockReleaseIntent(lockRelease, issuedAt);
   const message = solanaControlMessage({ network: SOLANA_CONTROL_NETWORK, action, signer: solanaAdminOwner,
     issuedAt, expiresAt, nonce: id, withdrawal, finalization, proposalCreation, snapshotPublication,
-    lockExecution, buybackExecution, marketingExecution, lockRelease });
+    lockExecution, buybackExecution, marketingExecution, lockRelease, offchainBallot });
   if (solanaChallenges.size >= 500) solanaChallenges.delete(solanaChallenges.keys().next().value as string);
   solanaChallenges.set(id, { action, message, issuedAt, expiresAt, nonce: id, withdrawal, finalization,
-    proposalCreation, snapshotPublication, lockExecution, buybackExecution, marketingExecution, lockRelease });
-  return { id, action, message, expiresAt, owner: solanaAdminOwner };
+    proposalCreation, snapshotPublication, lockExecution, buybackExecution, marketingExecution, lockRelease, offchainBallot });
+  return { id, action, message, expiresAt, owner: solanaAdminOwner, offchainBallot };
 }
 
 async function queueSolanaAdminAction(challengeId: string, signer: string, signature: string) {
@@ -690,6 +710,7 @@ async function queueSolanaAdminAction(challengeId: string, signer: string, signa
     buybackExecution: challenge.buybackExecution,
     marketingExecution: challenge.marketingExecution,
     lockRelease: challenge.lockRelease,
+    offchainBallot: challenge.offchainBallot,
     signature,
   };
   verifySignedSolanaControlAction(authorization, solanaAdminOwner);
@@ -705,6 +726,20 @@ async function queueSolanaAdminAction(challengeId: string, signer: string, signa
   return { ok: true, requestId, action: challenge.action };
 }
 
+async function loadOffchainBallot(proposalId?: string) {
+  let ballot: OffchainBallot;
+  if (proposalId && !/^[1-9]\d{0,19}$/.test(proposalId)) throw new Error("OFFCHAIN_BALLOT_ID_INVALID");
+  try {
+    ballot = validateOffchainBallot(JSON.parse(await readFile(resolve(publicDataRoot,
+      "governance", "offchain", proposalId ? `${proposalId}.json` : "active.json"), "utf8")));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
+    throw error;
+  }
+  const raw = await readFile(resolve(publicDataRoot, "governance", "proposals", ballot.id, "snapshot.json"), "utf8");
+  return { ballot, snapshot: verifiedOffchainSnapshot(ballot, raw) };
+}
+
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
@@ -717,6 +752,59 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/solana/governance-vote") {
       return handleGovernanceVoteRpc(request, response);
+    }
+    if (url.pathname === "/api/solana/offchain-governance" && request.method === "GET") {
+      try {
+        const requested = url.searchParams.get("proposal") ?? undefined;
+        const active = await loadOffchainBallot(requested);
+        if (!active) return jsonResponse(response, 200, { ballot: null });
+        const tally = await offchainTally(controlDataRoot, active.ballot, active.snapshot);
+        if (url.searchParams.get("receipts") === "1") {
+          const after = url.searchParams.get("after") || "";
+          if (after && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(after)) {
+            return jsonResponse(response, 400, { error: "invalid_cursor" });
+          }
+          const remaining = tally.receipts.filter((receipt) => receipt.wallet > after);
+          const page = remaining.slice(0, 100);
+          return jsonResponse(response, 200, { proposalId: active.ballot.id, receipts: page,
+            nextCursor: remaining.length > page.length ? page.at(-1)?.wallet : null });
+        }
+        const wallet = url.searchParams.get("wallet");
+        let eligibility: { weight: string; receipt?: typeof tally.receipts[number] } | null = null;
+        if (wallet !== null) {
+          if (new PublicKey(wallet).toBase58() !== wallet) return jsonResponse(response, 400, { error: "invalid_wallet" });
+          try {
+            eligibility = { weight: voteWeight(active.snapshot, wallet),
+              receipt: tally.receipts.find((item) => item.wallet === wallet) };
+          } catch (error) {
+            if (!(error instanceof Error) || error.message !== "OFFCHAIN_WALLET_INELIGIBLE") throw error;
+          }
+        }
+        return jsonResponse(response, 200, { ballot: active.ballot, totals: tally.totals,
+          count: tally.count, eligibility });
+      } catch {
+        return jsonResponse(response, 503, { error: "governance_unavailable" });
+      }
+    }
+    if (url.pathname === "/api/solana/offchain-governance/vote" && request.method === "POST") {
+      try {
+        const body = await readJsonBody(request);
+        if (Object.keys(body).some((key) => !["proposalId", "wallet", "option", "signature"].includes(key))
+          || typeof body.proposalId !== "string" || typeof body.wallet !== "string"
+          || typeof body.option !== "string" || typeof body.signature !== "string"
+          || body.signature.length > 128) return jsonResponse(response, 400, { error: "invalid_vote" });
+        const active = await loadOffchainBallot();
+        if (!active || active.ballot.id !== body.proposalId) return jsonResponse(response, 409, { error: "proposal_not_active" });
+        const receipt = await recordOffchainVote({ controlDataRoot, ballot: active.ballot,
+          snapshot: active.snapshot, vote: body as unknown as SignedOffchainVote });
+        return jsonResponse(response, 200, { receipt });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        const known = ["OFFCHAIN_VOTE_CLOSED", "OFFCHAIN_VOTE_INVALID", "OFFCHAIN_SIGNATURE_INVALID",
+          "OFFCHAIN_WALLET_INELIGIBLE", "OFFCHAIN_ALREADY_VOTED"];
+        return jsonResponse(response, known.includes(code) ? 400 : 503,
+          { error: known.includes(code) ? code.toLowerCase() : "governance_unavailable" });
+      }
     }
 
     if (blockLegacyAdminPath(url.pathname, isSolanaAdminMode)) {
@@ -773,11 +861,11 @@ const server = createServer(async (request, response) => {
       try {
         const body = await readJsonBody(request);
         if (typeof body.action !== "string" || Object.keys(body).some((key) =>
-          !["action", "amountRaw", "proposalRequest", "previewHash", "previewAuditedAtUnix", "releaseProposalId"].includes(key))) {
+          !["action", "amountRaw", "proposalRequest", "previewHash", "previewAuditedAtUnix", "releaseProposalId", "durationHours"].includes(key))) {
           return jsonResponse(response, 400, { error: "invalid_request" });
         }
         const challenge = await solanaAdminChallenge(body.action, body.amountRaw,
-          body.proposalRequest, body.previewHash, body.previewAuditedAtUnix, body.releaseProposalId);
+          body.proposalRequest, body.previewHash, body.previewAuditedAtUnix, body.releaseProposalId, body.durationHours);
         return challenge
           ? jsonResponse(response, 200, challenge)
           : jsonResponse(response, 400, { error: solanaAdminOwner ? "action_not_allowed" : "admin_disabled" });
@@ -801,7 +889,8 @@ const server = createServer(async (request, response) => {
           "GOVERNANCE_EXECUTION_NOT_RELEASED", "GOVERNANCE_EXECUTION_QUOTE_UNAVAILABLE",
           "GOVERNANCE_EXECUTION_QUOTE_CHANGED", "GOVERNANCE_EXECUTION_RATE_LIMITED",
           "GOVERNANCE_LOCK_RELEASE_ID_INVALID", "GOVERNANCE_LOCK_RELEASE_QUOTE_UNAVAILABLE",
-          "GOVERNANCE_PREVIEW_RATE_LIMITED"].includes(code)
+          "GOVERNANCE_PREVIEW_RATE_LIMITED", "OFFCHAIN_BALLOT_INTENT_INVALID",
+          "OFFCHAIN_BALLOT_STATUS_UNAVAILABLE"].includes(code)
           ? code.toLowerCase() : "invalid_request";
         return jsonResponse(response, ["GOVERNANCE_LOCK_RATE_LIMITED", "GOVERNANCE_EXECUTION_RATE_LIMITED"].includes(code)
           ? 429 : 400, { error: publicCode });

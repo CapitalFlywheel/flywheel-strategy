@@ -46,7 +46,7 @@ The reward asset is MicroStrategy xStock (`MSTRx`) on Solana, Token-2022 mint `X
 
 ## Reserve and trust boundaries
 
-The reserve is accounted separately from holder payout inventory. A restricted Solana governance program has **not** been deployed or audited, so public reserve voting and execution are disabled. The reserve must not be described as redeemable backing or a guaranteed holder claim
+The reserve is accounted separately from holder payout inventory. Eligible holders can sign an offchain reserve vote using a published balance-time snapshot, without paying a transaction fee. There is no deployed governance program: the vote is advisory, the reserve remains in the owner's wallet, and execution is an owner action. The reserve must not be described as redeemable backing or a guaranteed holder claim
 
 The owner and Pump creator can be one wallet. Automatic creator-fee collection requires a protected server-side copy of that wallet's key; a server compromise could therefore compromise owner authority. The holder inventory is also controlled by an operational signing key, and its current commitment rules are enforced by software and accounting rather than an immutable on-chain vault. Completed payouts cannot be recalled, while the documented recovery path is limited to uncommitted project-controlled receipts. See the [architecture](docs/architecture.md) and [Solana plan](docs/solana-mstrx-plan.md) for the exact boundaries
 

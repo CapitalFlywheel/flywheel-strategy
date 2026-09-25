@@ -51,6 +51,7 @@ interface SolanaAdminStatus {
   governanceSnapshot?: { proposalId: string; merkleRoot: string; totalAvailableWeight: string;
     sourceSha256: string; snapshotSha256: string; publishedAtUnix: number; reused: boolean; updatedAt: number };
   governanceProposal?: OwnerProposalStatus;
+  offchainBallot?: { id: string; startsAt: number; endsAt: number; reserveRawMstrx: string; updatedAt: number };
   updatedAt: number;
 }
 
@@ -138,6 +139,12 @@ const actionGroups = [
       ["finalize_reward_epoch", "Закрыть период наград", "Закрывает период только после сверки всех отправок и баланса"],
     ],
   },
+  {
+    title: "Голосование холдеров",
+    actions: [
+      ["start_offchain_ballot", "Открыть голосование", "Одна подпись публикует снимок холдеров и голосование · Холдеры подписывают выбор без транзакции"],
+    ],
+  },
 ] as const;
 
 // Each released reserve action has its own exact server command. Unreviewed
@@ -205,6 +212,7 @@ export function SolanaAdminPanel() {
   const [pendingAction, setPendingAction] = useState<PendingAction | undefined>(storedPendingAction);
   const [withdrawAmountRaw, setWithdrawAmountRaw] = useState("");
   const [releaseProposalId, setReleaseProposalId] = useState("");
+  const [offchainDurationHours, setOffchainDurationHours] = useState(3);
   const [proposalMode, setProposalMode] = useState<OwnerProposalPreviewMode>("initial");
   const [proposalDurationHours, setProposalDurationHours] = useState(1);
   const [proposalSelected, setProposalSelected] = useState<ReserveOutcome[]>(["ACCUMULATE"]);
@@ -319,12 +327,24 @@ export function SolanaAdminPanel() {
           : isProposalCreation ? { action, proposalRequest: proposalPreviewRequest,
             previewHash: proposalPreview!.previewHash, previewAuditedAtUnix: proposalPreview!.auditedAtUnix }
             : action === "release_lock_mstrx" ? { action, releaseProposalId }
+            : action === "start_offchain_ballot" ? { action, durationHours: offchainDurationHours }
             : { action }),
       });
-      const challenge = await challengeResponse.json() as Challenge & { error?: string };
+      const challenge = await challengeResponse.json() as Challenge & { error?: string;
+        offchainBallot?: { capitalMint: string; reserveWallet: string; reserveRawMstrx: string;
+          durationHours: number; options: string[] } };
       if (!challengeResponse.ok) throw new Error(challenge.error || "CHALLENGE_FAILED");
       if (action === "withdraw_free_reserve" && !challenge.message.includes(`Exact raw MSTRx: ${withdrawAmountRaw}\n`)) {
         throw new Error("WITHDRAWAL_CHALLENGE_AMOUNT_MISMATCH");
+      }
+      if (action === "start_offchain_ballot" && (!challenge.offchainBallot || !status?.launch.detectedMint
+        || challenge.offchainBallot.capitalMint !== status.launch.detectedMint
+        || challenge.offchainBallot.reserveWallet !== status.reserveWallet
+        || challenge.offchainBallot.reserveRawMstrx !== status.balances.reserveMstrxRaw
+        || challenge.offchainBallot.durationHours !== offchainDurationHours
+        || challenge.offchainBallot.options.join(",") !== governanceBallotOptions.map(([name]) => name).join(",")
+        || !challenge.message.includes(`Reserve at proposal: ${challenge.offchainBallot.reserveRawMstrx} raw MSTRx\n`))) {
+        throw new Error("OFFCHAIN_BALLOT_CHALLENGE_MISMATCH");
       }
       if (finalizeProposal && !matchesFinalizeOwnerChallenge(challenge.message, status, Date.now())) {
         throw new Error("GOVERNANCE_FINALIZE_CHALLENGE_MISMATCH");
@@ -686,6 +706,16 @@ export function SolanaAdminPanel() {
 
     </>}
 
+    <section className="admin-launch-flow">
+      <div className="admin-card-head"><div><span>ГОЛОСОВАНИЕ</span><h2>Параметры бюллетеня</h2></div></div>
+      <label>Продолжительность голосования
+        <select value={offchainDurationHours} onChange={(event) => setOffchainDurationHours(Number(event.target.value))}>
+          {[1, 3, 6, 12].map((hours) => <option key={hours} value={hours}>{hours} ч</option>)}
+        </select>
+      </label>
+      <p className="admin-note">Публикуются шесть вариантов и проверенный снимок долей холдеров · Итог публичен, исполнение остаётся за владельцем резервного кошелька · При открытом голосовании не трать сумму, указанную в бюллетене</p>
+      {status?.offchainBallot && <p className="admin-note">Бюллетень #{status.offchainBallot.id} · До {new Date(status.offchainBallot.endsAt * 1_000).toLocaleString()} · <a href={`/governance?proposal=${status.offchainBallot.id}`} target="_blank" rel="noreferrer">Открыть голосование ↗</a></p>}
+    </section>
     {actionGroups.map((group) => <section className="admin-launch-flow" key={group.title}>
       <div className="admin-card-head"><div><span>ДЕЙСТВИЯ ВЛАДЕЛЬЦА</span><h2>{group.title}</h2></div><b>{!executionReleased ? "НЕДОСТУПНО" : authorized ? "МОЖНО ПОДПИСЫВАТЬ" : "ПОДКЛЮЧИ КОШЕЛЁК"}</b></div>
       <div className="solana-action-grid">{group.actions.map(([action, label, detail]) => <article key={action}><div><b>{label}</b><small>{detail}</small></div><button disabled={!authorized || Boolean(busy) || Boolean(pendingAction) || (!executionReleased && ["arm_launch_detection", "activate_postlaunch"].includes(action))} onClick={() => void runAction(action)}>{busy === action ? "ПОДПИСЫВАЕМ…" : "ПОДПИСАТЬ"}</button></article>)}</div>

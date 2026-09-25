@@ -69,7 +69,9 @@ Raw-unit remainders are assigned deterministically by largest remainder. A walle
 
 The strategic reserve receives 40% of actual collected MSTRx creator fees in a separate user-controlled wallet, isolated from holder reward inventory
 
-There is no deployed Solana governance program or binding holder vote. The reserve wallet owner can control its funds directly; reserve spending is not automatic or holder-enforced
+Eligible holders vote by signing a message with their Solana wallet, without a transaction or fee. A finalized holder-history snapshot fixes voting weight from CAPITAL balance and holding time, excluding project and pool wallets. Each wallet has one vote per ballot; the snapshot, aggregate results and individual receipts are available through the site
+
+This is offchain voting, not a deployed Solana governance program. The reserve wallet owner can control its funds directly, including during a vote. The result is a public signal to the owner; it does not lock MSTRx or automatically execute the winning action
 
 The fee split does not give the owner access to completed holder payouts
 

@@ -32,6 +32,7 @@ import { releaseMatureMstrxLock, reconcileLockRelease, type LockReleaseLedger,
 import { assertSolanaRunnerSingleton } from "./runnerSingleton";
 import { requireGovernanceExecutionReleased, SOLANA_GOVERNANCE_EXECUTION_RELEASED } from "./releaseGates";
 import { verifyGovernanceReserveRoute } from "./governanceVaultRoute";
+import { publishOffchainBallot } from "./offchainBallotPublisher";
 
 interface ControlRequest extends SignedSolanaControlAction { id: string; requestedAt: number }
 interface ControlStatus {
@@ -65,6 +66,7 @@ interface ControlStatus {
   governanceSnapshot?: { proposalId: string; merkleRoot: string; totalAvailableWeight: string;
     sourceSha256: string; snapshotSha256: string; publishedAtUnix: number; reused: boolean; updatedAt: number };
   governanceProposal?: GovernanceProposalStatus;
+  offchainBallot?: { id: string; startsAt: number; endsAt: number; reserveRawMstrx: string; updatedAt: number };
   conversionsPaused: boolean;
   rewardEpochOwnsPause?: boolean;
   updatedAt: number;
@@ -283,6 +285,7 @@ async function saveStatus(status: ControlStatus) {
     governanceMarketingExecution: status.governanceMarketingExecution,
     governanceLockRelease: status.governanceLockRelease,
     governanceSnapshot: status.governanceSnapshot,
+    offchainBallot: status.offchainBallot,
     governanceProposal: status.governanceProposal,
     conversionsPaused: status.conversionsPaused,
     rewardEpochOwnsPause: status.rewardEpochOwnsPause,
@@ -692,6 +695,23 @@ async function dispatch(request: ControlRequest, status: ControlStatus) {
       status.conversionsPaused = false;
       break;
     case "recover_uncommitted": await recoverCreatorMstrx(status); break;
+    case "start_offchain_ballot": {
+      if (!request.offchainBallot || !status.launch.activated || !status.launch.detectedMint
+        || request.offchainBallot.capitalMint !== status.launch.detectedMint
+        || request.offchainBallot.reserveWallet !== required("SOLANA_RESERVE_SETTLEMENT_PUBLIC_KEY")) {
+        throw new Error("OFFCHAIN_BALLOT_LAUNCH_MISMATCH");
+      }
+      const ballot = await publishOffchainBallot({
+        intent: request.offchainBallot,
+        publicDataRoot: resolve(process.env.PUBLIC_DATA_ROOT || "data/public"),
+        stateRoot: resolve(process.env.SOLANA_STATE_ROOT || "data/solana"),
+        rpcUrls: rpcUrls() as [string, string], reserveMint: required("SOLANA_MSTRX_MINT"),
+        excluded: rewardEnvironment(status).excluded, authorizedAt: request.issuedAt,
+      });
+      status.offchainBallot = { id: ballot.id, startsAt: ballot.startsAt,
+        endsAt: ballot.endsAt, reserveRawMstrx: ballot.reserveRawMstrx, updatedAt: Date.now() };
+      break;
+    }
     case "withdraw_free_reserve": {
       if (!request.withdrawal) throw new Error("RESERVE_WITHDRAWAL_INTENT_REQUIRED");
       const ledger = await withdrawFreeReserve(freeWithdrawalEnvironment(status), {

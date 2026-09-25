@@ -10,6 +10,7 @@ import { MARKETING_SALE_POOL } from "./marketingSaleRoute";
 import { validateBuybackExecutionIntent, type BuybackExecutionIntent } from "./governanceBuybackIntent";
 import { lockReleaseMessage, validateLockReleaseIntent, type LockReleaseIntent,
   type SignedLockRelease } from "./governanceLockReleaseControl";
+import { validateOffchainBallotIntent, type OffchainBallotIntent } from "./offchainBallotPublisher";
 
 export const SOLANA_CONTROL_NETWORK = "solana-mainnet-beta" as const;
 export const SOLANA_CONTROL_CHALLENGE_MS = 5 * 60_000;
@@ -34,6 +35,7 @@ export const SOLANA_CONTROL_ACTIONS = new Set([
   "finalize_vote",
   "create_proposal", "create_revote", "publish_snapshot", "execute_lock_mstrx", "execute_marketing_sale",
   "execute_buyback", "release_lock_mstrx",
+  "start_offchain_ballot",
 ]);
 
 export interface FreeReserveWithdrawalIntent {
@@ -354,6 +356,7 @@ export interface SignedSolanaControlAction {
   marketingExecution?: MarketingExecutionIntent;
   buybackExecution?: BuybackExecutionIntent;
   lockRelease?: LockReleaseIntent;
+  offchainBallot?: OffchainBallotIntent;
 }
 
 export function solanaControlMessage(input: Omit<SignedSolanaControlAction, "signature">) {
@@ -362,10 +365,14 @@ export function solanaControlMessage(input: Omit<SignedSolanaControlAction, "sig
     if (input.withdrawal !== undefined || input.finalization !== undefined
       || input.proposalCreation !== undefined || input.snapshotPublication !== undefined
       || input.lockExecution !== undefined || input.marketingExecution !== undefined
-      || input.buybackExecution !== undefined) throw new Error("GOVERNANCE_LOCK_RELEASE_ACTION_INVALID");
+      || input.buybackExecution !== undefined || input.offchainBallot !== undefined) throw new Error("GOVERNANCE_LOCK_RELEASE_ACTION_INVALID");
     return lockReleaseMessage(input as Omit<SignedLockRelease, "signature">);
   }
   if (input.lockRelease !== undefined) throw new Error("GOVERNANCE_LOCK_RELEASE_ACTION_INVALID");
+  if (input.action === "start_offchain_ballot") {
+    if (!input.offchainBallot) throw new Error("OFFCHAIN_BALLOT_INTENT_REQUIRED");
+    validateOffchainBallotIntent(input.offchainBallot, input.issuedAt);
+  } else if (input.offchainBallot !== undefined) throw new Error("OFFCHAIN_BALLOT_ACTION_INVALID");
   if (input.action === "withdraw_free_reserve") {
     if (!input.withdrawal) throw new Error("RESERVE_WITHDRAWAL_INTENT_REQUIRED");
     validateFreeReserveWithdrawalIntent(input.withdrawal, input.issuedAt);
@@ -402,6 +409,16 @@ export function solanaControlMessage(input: Omit<SignedSolanaControlAction, "sig
     `Owner: ${input.signer}`,
     "Network: Solana Mainnet Beta",
     "Allocation: 60% holders / 40% strategic reserve",
+    ...(input.offchainBallot ? [
+      `Offchain ballot ID: ${input.offchainBallot.id}`,
+      `CAPITAL mint: ${input.offchainBallot.capitalMint}`,
+      `Reserve wallet: ${input.offchainBallot.reserveWallet}`,
+      `Reserve at proposal: ${input.offchainBallot.reserveRawMstrx} raw MSTRx`,
+      `Voting duration hours: ${input.offchainBallot.durationHours}`,
+      `Options: ${input.offchainBallot.options.join(", ")}`,
+      `Verified at: ${new Date(input.offchainBallot.verifiedAt).toISOString()}`,
+      "Advisory vote only: this signature does not move or lock reserve funds",
+    ] : []),
     ...(input.withdrawal ? [
       `Exact raw MSTRx: ${input.withdrawal.amountRaw}`,
       `Governance program: ${input.withdrawal.governanceProgram}`,
@@ -582,6 +599,10 @@ export function verifySignedSolanaControlAction(
     if (!input.lockRelease) throw new Error("GOVERNANCE_LOCK_RELEASE_INTENT_REQUIRED");
     validateLockReleaseIntent(input.lockRelease, input.issuedAt);
   } else if (input.lockRelease !== undefined) throw new Error("GOVERNANCE_LOCK_RELEASE_ACTION_INVALID");
+  if (input.action === "start_offchain_ballot") {
+    if (!input.offchainBallot) throw new Error("OFFCHAIN_BALLOT_INTENT_REQUIRED");
+    validateOffchainBallotIntent(input.offchainBallot, input.issuedAt);
+  } else if (input.offchainBallot !== undefined) throw new Error("OFFCHAIN_BALLOT_ACTION_INVALID");
   let signature: Uint8Array;
   try { signature = bs58.decode(input.signature); } catch { throw new Error("SIGNATURE_INVALID"); }
   if (signature.length !== 64 || !nacl.sign.detached.verify(

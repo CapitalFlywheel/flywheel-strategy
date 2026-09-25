@@ -12,6 +12,7 @@ import {
   type SignedSolanaControlAction,
 } from "./controlAuth";
 import { MARKETING_SALE_POOL } from "./marketingSaleRoute";
+import { OFFCHAIN_ACTIONS } from "./offchainGovernance";
 
 const owner = Keypair.generate();
 const now = Date.now();
@@ -31,6 +32,22 @@ function signedAction(overrides: Partial<Omit<SignedSolanaControlAction, "signat
 }
 
 describe("signed Solana control requests", () => {
+  it("binds an offchain ballot to the exact mint, reserve, amount, choices and duration", () => {
+    const offchainBallot = { id: String(now), capitalMint: Keypair.generate().publicKey.toBase58(),
+      reserveWallet: Keypair.generate().publicKey.toBase58(), reserveRawMstrx: "100000000",
+      durationHours: 3, options: [...OFFCHAIN_ACTIONS], verifiedAt: now };
+    const signed = signedAction({ action: "start_offchain_ballot", offchainBallot });
+    expect(verifySignedSolanaControlAction(signed, owner.publicKey.toBase58(), now)).toBe(true);
+    expect(() => verifySignedSolanaControlAction({ ...signed,
+      offchainBallot: { ...offchainBallot, reserveRawMstrx: "100000001" } }, owner.publicKey.toBase58(), now))
+      .toThrow("SIGNATURE_INVALID");
+    expect(() => verifySignedSolanaControlAction({ ...signed,
+      offchainBallot: { ...offchainBallot, durationHours: 6 } }, owner.publicKey.toBase58(), now))
+      .toThrow("SIGNATURE_INVALID");
+    expect(() => verifySignedSolanaControlAction({ ...signed,
+      offchainBallot: { ...offchainBallot, options: ["ACCUMULATE", "LOCK_MSTRX"] } }, owner.publicKey.toBase58(), now))
+      .toThrow("SIGNATURE_INVALID");
+  });
   it("accepts only the owner's exact action and five-minute challenge", () => {
     const signed = signedAction();
     expect(verifySignedSolanaControlAction(signed, owner.publicKey.toBase58(), now)).toBe(true);

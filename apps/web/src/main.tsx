@@ -13,6 +13,7 @@ import { solanaMainnet, solscanAccount, solscanToken, solscanTransaction } from 
 import { isSolanaPublicKey, shortPublicKey } from "./wallets";
 import { createSolanaWalletConnectAdapter, solanaWalletConnectProjectId } from "./solanaWalletConnect";
 import { awaitFinalizedVote } from "./voteConfirmation";
+import { OffchainGovernancePage } from "./offchainGovernance";
 import {
   buildGovernanceVoteInstruction, canCastGovernanceVote, formatMstrxExact, formatRawTokenExact, governanceProposalIdFromUrl,
   loadVerifiedGovernance, loadWalletGovernance,
@@ -706,7 +707,7 @@ function Root() {
         {admin
           ? <Suspense fallback={<main style={{ padding: 32 }}>Загрузка панели…</main>}><SolanaAdminPanel /></Suspense>
           : window.location.pathname.startsWith("/docs") ? <DocumentationPage />
-            : window.location.pathname.startsWith("/governance") ? <GovernancePage />
+            : window.location.pathname.startsWith("/governance") ? <main><Header links={links} /><OffchainGovernancePage /><Footer links={links} /></main>
               : <App />}
       </WalletModalProvider>
     </WalletProvider>
