@@ -689,6 +689,11 @@ function GovernancePage() {
 
 const SolanaAdminPanel = lazy(() => import("./solanaAdmin").then((module) => ({ default: module.SolanaAdminPanel })));
 
+function OffchainGovernanceShell() {
+  const links = usePublicLinks();
+  return <main><Header links={links} /><OffchainGovernancePage /><Footer links={links} /></main>;
+}
+
 function Root() {
   const admin = window.__FLYWHEEL_ADMIN__ === true;
   const projectId = solanaWalletConnectProjectId(import.meta.env.VITE_SOLANA_WALLETCONNECT_PROJECT_ID);
@@ -707,7 +712,7 @@ function Root() {
         {admin
           ? <Suspense fallback={<main style={{ padding: 32 }}>Загрузка панели…</main>}><SolanaAdminPanel /></Suspense>
           : window.location.pathname.startsWith("/docs") ? <DocumentationPage />
-            : window.location.pathname.startsWith("/governance") ? <main><Header links={links} /><OffchainGovernancePage /><Footer links={links} /></main>
+            : window.location.pathname.startsWith("/governance") ? <OffchainGovernanceShell />
               : <App />}
       </WalletModalProvider>
     </WalletProvider>
